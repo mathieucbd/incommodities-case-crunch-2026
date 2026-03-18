@@ -7,11 +7,26 @@ env/
 ENV/
 
 # ---------------------------------------------------
-# Data Files
+# Data Files (Stealth Configuration)
 # ---------------------------------------------------
-# If you want to ignore everything in the data folder except the folder structure:
+
+# 1. Ignore everything inside the data folder
 data/*
-!data/**/.gitkeep
+
+# 2. UN-IGNORE the specific directories we want Git to know about
+!data/raw/
+!data/processed/
+!data/outputs/
+
+# 3. Ignore everything inside those specific directories
+data/raw/*
+data/processed/*
+data/outputs/*
+
+# 4. UN-IGNORE the .gitkeep files so the empty folders get committed
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/outputs/.gitkeep
 
 # ---------------------------------------------------
 # Jupyter Notebooks
