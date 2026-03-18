@@ -1,0 +1,62 @@
+# ---------------------------------------------------
+# Virtual Environments
+# ---------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+
+# ---------------------------------------------------
+# Data Files
+# ---------------------------------------------------
+# If you want to ignore everything in the data folder except the folder structure:
+data/*
+!data/**/.gitkeep
+
+# ---------------------------------------------------
+# Jupyter Notebooks
+# ---------------------------------------------------
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# ---------------------------------------------------
+# Python Byte-compiled / Optimized / DLL files
+# ---------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ---------------------------------------------------
+# IDEs and Editors
+# ---------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---------------------------------------------------
+# OS Generated Files
+# ---------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ---------------------------------------------------
+# Testing & Tooling Caches (Ruff, Pytest, MyPy)
+# ---------------------------------------------------
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ---------------------------------------------------
+# Environment Variables / Secrets
+# ---------------------------------------------------
+.env
+.env.*

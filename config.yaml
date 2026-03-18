@@ -1,0 +1,55 @@
+# ==========================================
+# InCommodities Case Crunch 2026 - Master Config
+# ==========================================
+
+# 1. DATA PATHS
+# ------------------------------------------
+data:
+  # -> FOR SIMULATION: Use the AUHack data
+  raw_dir: "data/raw/auhack_legacy/" 
+  
+  # -> FOR REAL COMPETITION: Uncomment the line below and comment the one above
+  # raw_dir: "data/raw/case_provided/"
+  
+  processed_dir: "data/processed/"
+  output_dir: "data/outputs/"
+
+# 2. PIPELINE TOGGLES
+# ------------------------------------------
+# Turn these to false if you only want to test a specific part of the pipeline
+pipeline:
+  run_data_ingestion: true
+  run_preprocessing: true
+  run_lear_baseline: true
+  run_tree_models: true
+  run_dnn_multivariate: true
+  run_qra_ensemble: true
+  run_shap_explainability: true
+
+# 3. MODEL HYPERPARAMETERS & SETTINGS
+# ------------------------------------------
+model_settings:
+  # LEAR settings (from epftoolbox)
+  lear:
+    calibration_window_days: 182 # Weron's recommended sliding window
+
+  # Tree Models
+  trees:
+    n_estimators: 1000
+    early_stopping_rounds: 50
+
+  # Deep Neural Network (DNN)
+  dnn:
+    epochs: 150
+    batch_size: 64
+    validation_split: 0.2
+
+  # Hyperopt (TPE) Settings
+  hyperopt:
+    max_evals: 50 # How many architectures hyperopt will search through
+
+# 4. MARKET INTEGRATION (GREEDY ALGORITHM)
+# ------------------------------------------
+zones:
+  # The pipeline will loop through each of these and predict their spot prices
+  target_zones: ["AT", "BE", "CH", "CZ", "DE", "DK1", "DK2", "FR", "NL", "NO2", "PL", "SE4"]
