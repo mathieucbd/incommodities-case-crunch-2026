@@ -1,4 +1,4 @@
-# 🚀 InCommodities Case Crunch: AI Agent Master Blueprint
+# InCommodities Case Crunch: AI Agent Master Blueprint
 
 **Goal:** Turn European power market data into a competitive trading advantage by predicting Day-Ahead Market (DAM) spot prices and their prediction intervals.
 **Scope:** Multi-zone forecasting across 12 zones (AT, BE, CH, CZ, DE, DK1, DK2, FR, NL, NO2, PL, SE4).
@@ -18,6 +18,7 @@ If you are an AI coding assistant reading this file, these are your absolute rul
 
 ## 1. Project Organization & Folder Structure
 
+```text
 incommodities-case-crunch/
 ├── literature/               # Foundational research papers the pipeline is based on
 │   ├── Weron_2014.pdf        
@@ -50,6 +51,7 @@ incommodities-case-crunch/
 ├── config.yaml               # Configuration controlling active data paths and targets
 ├── PIPELINE.md               # End-to-end machine learning pipeline steps
 └── AGENTS.md                 # This file (AI instructions)
+```
 
 ---
 
