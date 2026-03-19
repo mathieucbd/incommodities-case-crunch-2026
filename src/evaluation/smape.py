@@ -41,4 +41,5 @@ def sMAPE(p_real, p_pred):
     # Checking if inputs are compatible
     p_real, p_pred = _process_inputs_for_metrics(p_real, p_pred)
 
-    return np.mean(np.abs(p_real - p_pred) / ((np.abs(p_real) + np.abs(p_pred)) / 2))
+    epsilon = np.finfo(np.float64).eps
+    return np.mean(np.abs(p_real - p_pred) / (((np.abs(p_real) + np.abs(p_pred)) / 2) + epsilon))
