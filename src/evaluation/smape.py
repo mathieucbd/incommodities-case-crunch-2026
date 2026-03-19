@@ -17,7 +17,7 @@ def _process_inputs_for_metrics(p_real, p_pred):
 
 
 def sMAPE(p_real, p_pred):
-    """
+    r"""
     Author: Jesus Lago (Adapted for standalone pipeline)
     Function that computes the symmetric mean absolute percentage error (sMAPE) between two forecasts.
         

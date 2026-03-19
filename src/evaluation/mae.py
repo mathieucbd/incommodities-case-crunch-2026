@@ -16,7 +16,7 @@ def _process_inputs_for_metrics(p_real, p_pred):
 
 
 def MAE(p_real, p_pred):
-    """
+    r"""
     Author: Jesus Lago (Adapted for standalone pipeline)
     Function that computes the mean absolute error (MAE) between two forecasts.
 

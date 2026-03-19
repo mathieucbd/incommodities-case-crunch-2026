@@ -18,7 +18,7 @@ def _process_inputs_for_metrics(p_real, p_pred):
 
 
 def rMAE(p_real, p_pred, m=None, freq='1h'):
-    """
+    r"""
     Author: Jesus Lago (Adapted for standalone pipeline)
     Function that computes the relative mean absolute error (rMAE) between two forecasts.
     
