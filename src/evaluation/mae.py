@@ -1,11 +1,10 @@
 """
-Function that implements the symmetric mean absolute percentage error (sMAPE) metric.
+Function that implements the mean absolute error (MAE) metric.
 """
 
 # Author: Jesus Lago
 
 # License: AGPL-3.0 License
-
 
 import numpy as np
 
@@ -16,14 +15,13 @@ def _process_inputs_for_metrics(p_real, p_pred):
     return p_real, p_pred
 
 
-def sMAPE(p_real, p_pred):
+def MAE(p_real, p_pred):
     """
     Author: Jesus Lago (Adapted for standalone pipeline)
-    Function that computes the symmetric mean absolute percentage error (sMAPE) between two forecasts.
-        
+    Function that computes the mean absolute error (MAE) between two forecasts.
+
     .. math:: 
-        \mathrm{sMAPE} = \frac{1}{N}\sum_{i=1}^N \frac{2\bigl|p_\mathrm{real}[i]−p_\mathrm{pred}[i]\bigr|}{
-        \bigl|P_\mathrm{real}[i]\bigr|+\bigl|P_\mathrm{pred}[i]\bigr|}
+        \mathrm{MAE} = \frac{1}{N}\sum_{i=1}^N \bigl|p_\mathrm{real}[i]-p_\mathrm{pred}[i]\bigr|    
 
     Parameters
     ----------
@@ -41,4 +39,4 @@ def sMAPE(p_real, p_pred):
     # Checking if inputs are compatible
     p_real, p_pred = _process_inputs_for_metrics(p_real, p_pred)
 
-    return np.mean(np.abs(p_real - p_pred) / ((np.abs(p_real) + np.abs(p_pred)) / 2))
+    return np.mean(np.abs(p_real - p_pred))
