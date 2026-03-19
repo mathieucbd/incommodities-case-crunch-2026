@@ -2,7 +2,7 @@
 name = "incommodities-cc-2026"
 version = "0.1.0"
 description = "State-of-the-art Electricity Price Forecasting (EPF) pipeline for the InCommodities Case Crunch 2026"
-readme = "ARCHITECTURE.md"
+readme = "AGENTS.md"
 requires-python = ">=3.10"
 
 dependencies = [
