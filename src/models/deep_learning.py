@@ -113,7 +113,7 @@ def train_pytorch_dnn(
 
     epochs = params.get("epochs", 150)
     batch_size = params.get("batch_size", 64)
-    lr = params.get("lr", 0.001)
+    lr = params.get("lr", params.get("learning_rate", 0.001))
     patience = params.get("patience", 15)
     dropout_rate = params.get("dropout_rate", 0.2)
     weight_decay = params.get("weight_decay", 0.0)
@@ -246,17 +246,13 @@ if __name__ == "__main__":
 
     raw_directory = config.get("data", {}).get("raw_dir", "data/raw/auhack_legacy/")
 
-    dnn_config = config.get("model_settings", {}).get("dnn", {})
-    epochs = dnn_config.get("epochs", 150)
-    batch_size = dnn_config.get("batch_size", 64)
-    val_split = dnn_config.get("validation_split", 0.2)
-    use_data_augmentation = dnn_config.get("use_data_augmentation", False)
+    dnn_params = config.get("model_settings", {}).get("dnn", {}).copy()
+    val_split = dnn_params.get("validation_split", 0.2)
+    use_data_augmentation = dnn_params.get("use_data_augmentation", False)
 
     target_zone = "DE"
     logger.info("========================================")
-    logger.info(
-        f"Loading SOTA Multivariate DNN Evaluation natively for {target_zone}..."
-    )
+    logger.info(f"Loading Multivariate DNN Evaluation natively for {target_zone}...")
 
     df = load_and_merge_zone(target_zone, raw_directory)
 
@@ -326,10 +322,10 @@ if __name__ == "__main__":
     )
     logger.info("========================================")
 
-    params = {"epochs": epochs, "batch_size": batch_size}
-
     logger.info(f"Initiating Internal PyTorch Compiler Loop (Adam | L1Loss)...")
-    model, device = train_pytorch_dnn(X_train_d, y_train_d, X_val_d, y_val_d, params)
+    model, device = train_pytorch_dnn(
+        X_train_d, y_train_d, X_val_d, y_val_d, params=dnn_params
+    )
 
     logger.info("========================================")
     logger.info("--------- Evaluation Metrics -----------")

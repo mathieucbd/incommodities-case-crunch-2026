@@ -118,9 +118,11 @@ def run_ensemble():
     quantiles = qra_config.get("quantiles", [0.05, 0.5, 0.95])
 
     # 3. Train Base Models and Generate Validation & Test Predictions
-    logger.info("Training Base Models (SOTA Optimized)...")
+    logger.info("========================================")
+    logger.info("Training Base Models...")
 
     # LightGBM
+    logger.info("--> Building LightGBM (1000 trees)...")
     lgb_params = trees_config.get("lgb", {}).copy()
     lgb_params["early_stopping_rounds"] = 50
     model_lgb = train_lightgbm(
@@ -130,6 +132,7 @@ def run_ensemble():
     test_preds_lgb = model_lgb.predict(X_test_raw)
 
     # XGBoost
+    logger.info("--> Building XGBoost (1500 trees)...")
     xgb_params = trees_config.get("xgb", {}).copy()
     xgb_params["early_stopping_rounds"] = 50
     model_xgb = train_xgboost(
@@ -139,6 +142,9 @@ def run_ensemble():
     test_preds_xgb = model_xgb.predict(X_test_raw)
 
     # CatBoost
+    logger.info(
+        "--> Building CatBoost (1500 deep trees, this will take a few minutes)..."
+    )
     cat_params = trees_config.get("cat", {}).copy()
     cat_params["early_stopping_rounds"] = 50
     cat_params["train_dir"] = "data/outputs/catboost_info"
@@ -148,7 +154,8 @@ def run_ensemble():
     val_preds_cat = model_cat.predict(X_val_raw)
     test_preds_cat = model_cat.predict(X_test_raw)
 
-    # DNN (Requires Scaling and Reshaping)
+    # DNN
+    logger.info("--> Training Multivariate PyTorch DNN (150 Epochs limit)...")
     X_train_s, X_val_s, X_test_s, _ = scale_data(X_train_raw, X_val_raw, X_test_raw)
     y_train_s_df, y_val_s_df, y_test_s_df, y_scaler = scale_data(
         y_train_raw.to_frame(), y_val_raw.to_frame(), y_test_raw.to_frame()

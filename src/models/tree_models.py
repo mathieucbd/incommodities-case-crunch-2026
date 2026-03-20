@@ -136,9 +136,10 @@ if __name__ == "__main__":
 
     raw_directory = config.get("data", {}).get("raw_dir", "data/raw/auhack_legacy/")
 
-    tree_config = config.get("model_settings", {}).get("trees", {})
-    n_estimators = tree_config.get("n_estimators", 1000)
-    early_stopping_rounds = tree_config.get("early_stopping_rounds", 50)
+    lgb_params = config.get("model_settings", {}).get("trees", {}).get("lgb", {}).copy()
+    xgb_params = config.get("model_settings", {}).get("trees", {}).get("xgb", {}).copy()
+    cat_params = config.get("model_settings", {}).get("trees", {}).get("cat", {}).copy()
+    rf_params = config.get("model_settings", {}).get("trees", {}).get("rf", {}).copy()
 
     target_zone = "DE"
     logger.info(f"========================================")
@@ -182,44 +183,25 @@ if __name__ == "__main__":
     # 3. Model Orchestration
 
     # LightGBM
-    lgb_params = {
-        "n_estimators": n_estimators,
-        "early_stopping_rounds": early_stopping_rounds,
-    }
-    logger.info(
-        f"Training LightGBM [Est: {n_estimators}, Stop: {early_stopping_rounds}]..."
-    )
+    lgb_params["early_stopping_rounds"] = 50
+    logger.info("Training LightGBM (Optimized Config)...")
     lgb_model = train_lightgbm(X_train, y_train, X_val, y_val, lgb_params)
     _ = evaluate_model("LightGBM", lgb_model, X_test, y_test)
 
     # XGBoost
-    xgb_params = {
-        "n_estimators": n_estimators,
-        "early_stopping_rounds": early_stopping_rounds,
-        "n_jobs": -1,
-    }
-    logger.info(
-        f"Training XGBoost [Est: {n_estimators}, Stop: {early_stopping_rounds}]..."
-    )
+    xgb_params["early_stopping_rounds"] = 50
+    logger.info("Training XGBoost (Optimized Config)...")
     xgb_model = train_xgboost(X_train, y_train, X_val, y_val, xgb_params)
     _ = evaluate_model("XGBoost", xgb_model, X_test, y_test)
 
     # CatBoost
-    cat_params = {
-        "n_estimators": n_estimators,
-        "early_stopping_rounds": early_stopping_rounds,
-    }
-    logger.info(
-        f"Training CatBoost [Est: {n_estimators}, Stop: {early_stopping_rounds}]..."
-    )
+    cat_params["early_stopping_rounds"] = 50
+    logger.info("Training CatBoost (Optimized Config)...")
     cat_model = train_catboost(X_train, y_train, X_val, y_val, cat_params)
     _ = evaluate_model("CatBoost", cat_model, X_test, y_test)
 
     # RandomForest
-    rf_params = {"n_estimators": 300, "n_jobs": -1}
-    logger.info(
-        f"Training RandomForest [Est: {rf_params['n_estimators']}, Native Sequence (No Val)]..."
-    )
+    logger.info("Training RandomForest (Optimized Config)...")
     rf_model = train_random_forest(X_train, y_train, rf_params)
     _ = evaluate_model("RandomForest", rf_model, X_test, y_test)
 
