@@ -74,4 +74,4 @@ htmlcov/
 # Environment Variables / Secrets
 # ---------------------------------------------------
 .env
-.env.*
+.env.*data/outputs/catboost_info/
