@@ -167,7 +167,6 @@ if __name__ == "__main__":
     lgb_params = {
         'n_estimators': n_estimators,
         'early_stopping_rounds': early_stopping_rounds,
-        'random_state': 42
     }
     logger.info(f"Training LightGBM [Est: {n_estimators}, Stop: {early_stopping_rounds}]...")
     lgb_model = train_lightgbm(X_train, y_train, X_val, y_val, lgb_params)
@@ -177,7 +176,6 @@ if __name__ == "__main__":
     xgb_params = {
         'n_estimators': n_estimators,
         'early_stopping_rounds': early_stopping_rounds,
-        'random_state': 42,
         'n_jobs': -1
     }
     logger.info(f"Training XGBoost [Est: {n_estimators}, Stop: {early_stopping_rounds}]...")
@@ -188,7 +186,6 @@ if __name__ == "__main__":
     cat_params = {
         'n_estimators': n_estimators,
         'early_stopping_rounds': early_stopping_rounds,
-        'random_state': 42
     }
     logger.info(f"Training CatBoost [Est: {n_estimators}, Stop: {early_stopping_rounds}]...")
     cat_model = train_catboost(X_train, y_train, X_val, y_val, cat_params)
@@ -196,8 +193,7 @@ if __name__ == "__main__":
     
     # RandomForest 
     rf_params = {
-        'n_estimators': 300, # Subsampling purely targeting faster validation mappings vs explicit exact search bounds
-        'random_state': 42,
+        'n_estimators': 300,
         'n_jobs': -1
     }
     logger.info(f"Training RandomForest [Est: {rf_params['n_estimators']}, Native Sequence (No Val)]...")

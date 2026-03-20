@@ -103,9 +103,15 @@ def train_pytorch_dnn(X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarra
     batch_size = params.get('batch_size', 64)
     lr = params.get('lr', 0.001)
     patience = params.get('patience', 15)
+    dropout_rate = params.get('dropout_rate', 0.2)
+    weight_decay = params.get('weight_decay', 0.0)
+    seed = params.get('seed', None)
+    
+    if seed is not None:
+        torch.manual_seed(seed)
     
     input_dim = X_train.shape[1]
-    model = EPFMultivariateDNN(input_dim=input_dim)
+    model = EPFMultivariateDNN(input_dim=input_dim, dropout_rate=dropout_rate)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     
@@ -117,7 +123,7 @@ def train_pytorch_dnn(X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarra
     
     # Jesus Lago proved tracking MSE distorts EPF limits. We enforce MAE.
     criterion = nn.L1Loss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     
     best_val_loss = float('inf')
     best_model_weights = None

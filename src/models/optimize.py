@@ -1,0 +1,351 @@
+"""
+Exhaustive Bayesian Hyperparameter Optimization with Checkpointing.
+Uses the Tree-structured Parzen Estimator (TPE) algorithm via hyperopt.
+Supports fault-tolerant resuming via pickle-based Trials checkpointing.
+"""
+import logging
+import pickle
+import os
+import yaml
+import numpy as np
+import pandas as pd
+from pathlib import Path
+import sys
+import torch
+
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+
+from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
+
+from src.data_ingestion import load_and_merge_zone
+from src.features import create_lags, add_deterministic_features, apply_mad_filter
+from src.preprocessing import chronological_train_val_test_split, scale_data
+from src.constants import TARGET_COL
+from src.evaluation.mae import MAE
+
+from src.models.tree_models import train_lightgbm, train_xgboost, train_catboost, train_random_forest
+from src.models.deep_learning import reshape_to_daily, train_pytorch_dnn
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Global data container — populated once in __main__ before fmin loops
+# ---------------------------------------------------------------------------
+_D = {}
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint helpers
+# ---------------------------------------------------------------------------
+
+def _load_trials(path: str) -> Trials:
+    """Load existing Trials from disk, or return a fresh one."""
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            trials = pickle.load(f)
+        logger.info(f"[Checkpoint] Resuming from {path} ({len(trials.trials)} completed trials).")
+    else:
+        trials = Trials()
+        logger.info(f"[Checkpoint] No checkpoint at {path}. Starting fresh.")
+    return trials
+
+
+def _save_trials(trials: Trials, path: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        pickle.dump(trials, f)
+
+
+# ---------------------------------------------------------------------------
+# Objective functions
+# ---------------------------------------------------------------------------
+
+def objective_lgb(params):
+    seed = _D['seed']
+    p = {
+        'n_estimators':     int(params['n_estimators']),
+        'learning_rate':    params['learning_rate'],
+        'num_leaves':       int(params['num_leaves']),
+        'colsample_bytree': params['colsample_bytree'],
+        'subsample':        params['subsample'],
+        'reg_alpha':        params['reg_alpha'],
+        'reg_lambda':       params['reg_lambda'],
+        'early_stopping_rounds': 50,
+        'random_state':     seed,
+        'n_jobs':           -1,
+    }
+    model = train_lightgbm(_D['X_tr'], _D['y_tr'], _D['X_va'], _D['y_va'], params=p)
+    val_mae = MAE(_D['y_va'], pd.Series(model.predict(_D['X_va']), index=_D['X_va'].index))
+    _save_trials(_D['trials_lgb'], _D['ckpt_lgb'])
+    return {'loss': val_mae, 'status': STATUS_OK}
+
+
+def objective_xgb(params):
+    seed = _D['seed']
+    p = {
+        'n_estimators':       int(params['n_estimators']),
+        'learning_rate':      params['learning_rate'],
+        'max_depth':          int(params['max_depth']),
+        'subsample':          params['subsample'],
+        'colsample_bytree':   params['colsample_bytree'],
+        'min_child_weight':   int(params['min_child_weight']),
+        'reg_alpha':          params['reg_alpha'],
+        'reg_lambda':         params['reg_lambda'],
+        'early_stopping_rounds': 50,
+        'random_state':       seed,
+        'n_jobs':             -1,
+    }
+    model = train_xgboost(_D['X_tr'], _D['y_tr'], _D['X_va'], _D['y_va'], params=p)
+    val_mae = MAE(_D['y_va'], pd.Series(model.predict(_D['X_va']), index=_D['X_va'].index))
+    _save_trials(_D['trials_xgb'], _D['ckpt_xgb'])
+    return {'loss': val_mae, 'status': STATUS_OK}
+
+
+def objective_cat(params):
+    seed = _D['seed']
+    p = {
+        'n_estimators':    int(params['n_estimators']),
+        'learning_rate':   params['learning_rate'],
+        'depth':           int(params['depth']),
+        'l2_leaf_reg':     params['l2_leaf_reg'],
+        'random_strength': params['random_strength'],
+        'early_stopping_rounds': 50,
+        'random_state':    seed,
+        'train_dir':       'data/outputs/catboost_info',
+    }
+    model = train_catboost(_D['X_tr'], _D['y_tr'], _D['X_va'], _D['y_va'], params=p)
+    val_mae = MAE(_D['y_va'], pd.Series(model.predict(_D['X_va']), index=_D['X_va'].index))
+    _save_trials(_D['trials_cat'], _D['ckpt_cat'])
+    return {'loss': val_mae, 'status': STATUS_OK}
+
+
+def objective_rf(params):
+    seed = _D['seed']
+    p = {
+        'n_estimators':     int(params['n_estimators']),
+        'max_depth':        int(params['max_depth']),
+        'min_samples_split': int(params['min_samples_split']),
+        'min_samples_leaf': int(params['min_samples_leaf']),
+        'random_state':     seed,
+        'n_jobs':           -1,
+    }
+    model = train_random_forest(_D['X_tr'], _D['y_tr'], params=p)
+    val_mae = MAE(_D['y_va'], pd.Series(model.predict(_D['X_va']), index=_D['X_va'].index))
+    _save_trials(_D['trials_rf'], _D['ckpt_rf'])
+    return {'loss': val_mae, 'status': STATUS_OK}
+
+
+def objective_dnn(params):
+    seed = _D['seed']
+    p = {
+        'lr':           params['lr'],
+        'dropout_rate': params['dropout_rate'],
+        'weight_decay': params['weight_decay'],
+        'batch_size':   int(params['batch_size']),
+        'epochs':       150,
+        'patience':     15,
+        'seed':         seed,
+    }
+
+    model, device = train_pytorch_dnn(_D['X_tr_d'], _D['y_tr_d'], _D['X_va_d'], _D['y_va_d'], params=p)
+
+    # Evaluate on (scaled) validation daily blocks → compute MAE in original scale
+    model.eval()
+    with torch.no_grad():
+        preds_scaled = model(torch.tensor(_D['X_va_d']).to(device)).cpu().numpy().flatten()
+
+    preds_unscaled = _D['y_scaler'].inverse_transform(preds_scaled.reshape(-1, 1)).flatten()
+
+    # Re-align to valid (full-day) val indices
+    y_va_raw = _D['y_va_raw']
+    valid_idx = []
+    for date, grp in pd.DataFrame({'T': y_va_raw.values, 'D': y_va_raw.index.date}, index=y_va_raw.index).groupby('D'):
+        if len(grp) == 24:
+            valid_idx.extend(grp.index)
+
+    val_mae = MAE(y_va_raw.loc[valid_idx], pd.Series(preds_unscaled, index=valid_idx))
+    _save_trials(_D['trials_dnn'], _D['ckpt_dnn'])
+    return {'loss': val_mae, 'status': STATUS_OK}
+
+
+# ---------------------------------------------------------------------------
+# Search spaces
+# ---------------------------------------------------------------------------
+
+SPACE_LGB = {
+    'n_estimators':     hp.choice('lgb_n_est',   [500, 1000, 1500]),
+    'learning_rate':    hp.loguniform('lgb_lr',   np.log(0.001), np.log(0.1)),
+    'num_leaves':       hp.quniform('lgb_leaves', 20, 256, 1),
+    'colsample_bytree': hp.uniform('lgb_col',     0.5, 1.0),
+    'subsample':        hp.uniform('lgb_sub',     0.5, 1.0),
+    'reg_alpha':        hp.loguniform('lgb_ra',   np.log(1e-4), np.log(10.0)),
+    'reg_lambda':       hp.loguniform('lgb_rl',   np.log(1e-4), np.log(10.0)),
+}
+
+SPACE_XGB = {
+    'n_estimators':     hp.choice('xgb_n_est',   [500, 1000, 1500]),
+    'learning_rate':    hp.loguniform('xgb_lr',   np.log(0.001), np.log(0.1)),
+    'max_depth':        hp.quniform('xgb_depth',  3, 12, 1),
+    'subsample':        hp.uniform('xgb_sub',     0.5, 1.0),
+    'colsample_bytree': hp.uniform('xgb_col',     0.5, 1.0),
+    'min_child_weight': hp.quniform('xgb_mcw',   1, 10, 1),
+    'reg_alpha':        hp.loguniform('xgb_ra',   np.log(1e-4), np.log(10.0)),
+    'reg_lambda':       hp.loguniform('xgb_rl',   np.log(1e-4), np.log(10.0)),
+}
+
+SPACE_CAT = {
+    'n_estimators':     hp.choice('cat_n_est',   [500, 1000, 1500]),
+    'learning_rate':    hp.loguniform('cat_lr',   np.log(0.001), np.log(0.1)),
+    'depth':            hp.quniform('cat_depth',  4, 10, 1),
+    'l2_leaf_reg':      hp.loguniform('cat_l2',   np.log(1), np.log(100)),
+    'random_strength':  hp.loguniform('cat_rs',   np.log(1e-3), np.log(10.0)),
+}
+
+SPACE_RF = {
+    'n_estimators':      hp.choice('rf_n_est',   [300, 500, 1000]),
+    'max_depth':         hp.quniform('rf_depth',  10, 50, 1),
+    'min_samples_split': hp.quniform('rf_mss',   2, 20, 1),
+    'min_samples_leaf':  hp.quniform('rf_msl',   1, 10, 1),
+}
+
+SPACE_DNN = {
+    'lr':           hp.loguniform('dnn_lr',   np.log(0.0001), np.log(0.01)),
+    'dropout_rate': hp.uniform('dnn_drop',    0.1, 0.5),
+    'weight_decay': hp.loguniform('dnn_wd',   np.log(1e-6), np.log(1e-2)),
+    'batch_size':   hp.choice('dnn_bs',       [32, 64, 128]),
+}
+
+
+# ---------------------------------------------------------------------------
+# Execution block
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.WARNING, format="[%(levelname)s] %(message)s")
+    # Keep our own logger at INFO
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    logger.addHandler(handler)
+
+    with open("config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+
+    raw_dir      = config['data']['raw_dir']
+    seed         = config.get('pipeline', {}).get('global_seed', 42)
+    trials_dir   = config.get('model_settings', {}).get('hyperopt', {}).get('trials_dir', 'data/outputs/trials/')
+    max_evals    = config.get('model_settings', {}).get('hyperopt', {}).get('max_evals', 50)
+    aug          = config.get('model_settings', {}).get('dnn', {}).get('use_data_augmentation', True)
+
+    # -----------------------------------------------------------------------
+    # 1. Load & feature-engineer once
+    # -----------------------------------------------------------------------
+    logger.info("========================================")
+    logger.info(f"Loading data (zone=DE, seed={seed}, max_evals={max_evals})...")
+
+    df = load_and_merge_zone("DE", raw_dir)
+    df['Spot_Price_Filtered'] = apply_mad_filter(df[TARGET_COL], window='24h', z=3.0)
+    df = add_deterministic_features(df)
+
+    lag_cols  = ['Spot_Price_Filtered', 'Residual_Load']
+    lags_list = [24, 48, 168]
+    df = create_lags(df, lag_cols, lags_list)
+
+    features = ['Hour', 'DayOfWeek', 'Month'] + [
+        f'{c}_lag_{l}' for c in lag_cols for l in lags_list
+    ]
+    df = df.dropna(subset=features + [TARGET_COL])
+
+    train_df, val_df, test_df = chronological_train_val_test_split(df, val_ratio=0.15, test_ratio=0.15)
+
+    # Raw (for trees)
+    X_tr = train_df[features];  y_tr = train_df[TARGET_COL]
+    X_va = val_df[features];    y_va = val_df[TARGET_COL]
+
+    # Scaled (for DNN)
+    X_tr_s, X_va_s, _, _ = scale_data(X_tr, X_va, test_df[features])
+    y_tr_s_df, y_va_s_df, _, y_scaler = scale_data(
+        y_tr.to_frame(), y_va.to_frame(), test_df[[TARGET_COL]]
+    )
+    y_tr_s = y_tr_s_df[TARGET_COL]
+    y_va_s = y_va_s_df[TARGET_COL]
+
+    X_tr_d, y_tr_d = reshape_to_daily(X_tr_s, y_tr_s, augment=aug)
+    X_va_d, y_va_d = reshape_to_daily(X_va_s, y_va_s, augment=False)
+
+    logger.info(f"Train DNN tensors: {X_tr_d.shape}  Val: {X_va_d.shape}")
+
+    # -----------------------------------------------------------------------
+    # 2. Populate global data container
+    # -----------------------------------------------------------------------
+    Path(trials_dir).mkdir(parents=True, exist_ok=True)
+
+    ckpt_lgb = os.path.join(trials_dir, 'lgb_trials.pkl')
+    ckpt_xgb = os.path.join(trials_dir, 'xgb_trials.pkl')
+    ckpt_cat = os.path.join(trials_dir, 'cat_trials.pkl')
+    ckpt_rf  = os.path.join(trials_dir, 'rf_trials.pkl')
+    ckpt_dnn = os.path.join(trials_dir, 'dnn_trials.pkl')
+
+    trials_lgb = _load_trials(ckpt_lgb)
+    trials_xgb = _load_trials(ckpt_xgb)
+    trials_cat = _load_trials(ckpt_cat)
+    trials_rf  = _load_trials(ckpt_rf)
+    trials_dnn = _load_trials(ckpt_dnn)
+
+    _D.update({
+        'seed':     seed,
+        'X_tr':     X_tr,  'y_tr':     y_tr,
+        'X_va':     X_va,  'y_va':     y_va,
+        'X_tr_d':   X_tr_d, 'y_tr_d':  y_tr_d,
+        'X_va_d':   X_va_d, 'y_va_d':  y_va_d,
+        'y_va_raw': y_va,
+        'y_scaler': y_scaler,
+        'trials_lgb': trials_lgb, 'ckpt_lgb': ckpt_lgb,
+        'trials_xgb': trials_xgb, 'ckpt_xgb': ckpt_xgb,
+        'trials_cat': trials_cat, 'ckpt_cat': ckpt_cat,
+        'trials_rf':  trials_rf,  'ckpt_rf':  ckpt_rf,
+        'trials_dnn': trials_dnn, 'ckpt_dnn': ckpt_dnn,
+    })
+
+    # -----------------------------------------------------------------------
+    # 3. Run optimizations — each model picks up from its checkpoint
+    # -----------------------------------------------------------------------
+    models_config = [
+        ("LightGBM",    objective_lgb, SPACE_LGB, trials_lgb, ckpt_lgb),
+        ("XGBoost",     objective_xgb, SPACE_XGB, trials_xgb, ckpt_xgb),
+        ("CatBoost",    objective_cat, SPACE_CAT, trials_cat, ckpt_cat),
+        ("RandomForest",objective_rf,  SPACE_RF,  trials_rf,  ckpt_rf),
+        ("PyTorch DNN", objective_dnn, SPACE_DNN, trials_dnn, ckpt_dnn),
+    ]
+
+    best_params = {}
+    for name, obj_fn, space, trials, ckpt in models_config:
+        already_done = len(trials.trials)
+        remaining    = max(0, max_evals - already_done)
+        logger.info(f"========================================")
+        logger.info(f"Tuning {name}: {already_done}/{max_evals} done, running {remaining} more...")
+
+        if remaining > 0:
+            best = fmin(
+                fn       = obj_fn,
+                space    = space,
+                algo     = tpe.suggest,
+                max_evals= max_evals,
+                trials   = trials,
+            )
+            _save_trials(trials, ckpt)
+        else:
+            logger.info(f"{name} already fully optimized (checkpoint intact).")
+
+        best_params[name] = space_eval(space, trials.argmin)
+        logger.info(f"[BEST] {name}: {best_params[name]}")
+
+    # -----------------------------------------------------------------------
+    # 4. Final summary
+    # -----------------------------------------------------------------------
+    logger.info("========================================")
+    logger.info("======== OPTIMAL HYPERPARAMETERS =======")
+    for name, params in best_params.items():
+        logger.info(f"{name:15s}: {params}")
+    logger.info("========================================")
+    logger.info("Copy these values into config.yaml -> model_settings!")
