@@ -28,49 +28,59 @@ pipeline:
 # 3. MODEL HYPERPARAMETERS & SETTINGS
 # ------------------------------------------
 model_settings:
-  # LEAR settings
   lear:
     calibration_window_days: 182 
 
-  # Tree Models (TPE Optimized)
   trees:
     lgb:
-      n_estimators: 500
-      learning_rate: 0.00969
-      num_leaves: 54
+      n_estimators: 1000
+      learning_rate: 0.023415520872077794
+      num_leaves: 208
+      colsample_bytree: 0.6367616627270904
+      subsample: 0.9915831103319165
+      reg_alpha: 0.3260774971142085
+      reg_lambda: 7.822058785222628
     xgb:
-      n_estimators: 1000
-      learning_rate: 0.01098
+      n_estimators: 1500
+      learning_rate: 0.08221328793599435
       max_depth: 8
-      subsample: 0.7927
+      min_child_weight: 8
+      colsample_bytree: 0.8496392201139591
+      subsample: 0.9962638317751689
+      reg_alpha: 0.012990707838862685
+      reg_lambda: 2.506811381979819
     cat:
-      n_estimators: 1000
-      learning_rate: 0.06476
-      depth: 6
+      n_estimators: 1500
+      learning_rate: 0.00537332196690138
+      depth: 10
+      l2_leaf_reg: 1.4040406107259091
+      random_strength: 0.15576584656725487
     rf:
       n_estimators: 500
-      max_depth: 20
-      min_samples_split: 8
-    early_stopping_rounds: 50
+      max_depth: 11
+      min_samples_split: 16
+      min_samples_leaf: 4
 
-  # Deep Neural Network (PyTorch Multivariate - TPE Optimized)
   dnn:
     epochs: 150
-    batch_size: 64
+    batch_size: 32
     validation_split: 0.2
-    learning_rate: 0.00952
-    dropout_rate: 0.312
+    learning_rate: 0.0001384964748747517
+    dropout_rate: 0.24275315195410302
+    weight_decay: 2.0647793468329406e-05
     patience: 15
     use_data_augmentation: true
 
-  # Quantile Regression Averaging (QRA) Ensemble
   qra:
     quantiles: [0.05, 0.50, 0.95]
     alpha_winkler: 0.10
+    n_estimators: 500
+    learning_rate: 0.05
+    num_leaves: 31
+    min_child_samples: 20
 
-  # Hyperopt Settings
   hyperopt:
-    max_evals: 50
+    max_evals: 50 
     trials_dir: "data/outputs/trials/"
 
 # 4. MARKET INTEGRATION (GREEDY ALGORITHM)
