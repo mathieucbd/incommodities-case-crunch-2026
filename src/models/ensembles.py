@@ -27,22 +27,31 @@ from src.evaluation.mae import MAE
 
 logger = logging.getLogger(__name__)
 
-def train_qra(y_true, base_preds: dict, quantiles=[0.05, 0.5, 0.95]):
+def train_qra(y_true, base_preds: dict, quantiles=[0.05, 0.5, 0.95], params: dict = None):
     """
     Trains Quantile Regression Averaging (QRA) using LightGBM as the meta-learner.
     Input features are the point forecasts from base models.
+    Hyperparameters are read from config.yaml via the `params` dict.
     """
-    # Create feature matrix from base model predictions
+    if params is None:
+        params = {}
+    
     X_qra = pd.DataFrame(base_preds)
+    seed = params.get('random_state', 42)
     
     q_models = {}
-    q_preds = {}
-    
     for q in quantiles:
         logger.info(f"Training QRA meta-model for quantile: {q}")
-        model = LGBMRegressor(objective='quantile', alpha=q, 
-                              n_estimators=500, learning_rate=0.05, 
-                              num_leaves=31, random_state=42, verbose=-1)
+        model = LGBMRegressor(
+            objective    = 'quantile',
+            alpha        = q,
+            n_estimators = params.get('n_estimators', 500),
+            learning_rate= params.get('learning_rate', 0.05),
+            num_leaves   = params.get('num_leaves', 31),
+            min_child_samples = params.get('min_child_samples', 20),
+            random_state = seed,
+            verbose      = -1,
+        )
         model.fit(X_qra, y_true)
         q_models[q] = model
         
@@ -181,8 +190,12 @@ def run_ensemble():
     y_val_aligned = y_val_raw.loc[common_val_idx]
     y_test_aligned = y_test_raw.loc[common_test_idx]
     
-    # 4. Train QRA
-    q_models = train_qra(y_val_aligned, val_base_preds, quantiles=quantiles)
+    # 4. Train QRA (Params from config)
+    qra_params = qra_config.copy()
+    qra_params.pop('quantiles', None)
+    qra_params.pop('alpha_winkler', None)
+    qra_params['random_state'] = config.get('pipeline', {}).get('global_seed', 42)
+    q_models = train_qra(y_val_aligned, val_base_preds, quantiles=quantiles, params=qra_params)
     
     # 5. Generate Quantile Predictions on Test Set
     X_test_qra = pd.DataFrame(test_base_preds)
