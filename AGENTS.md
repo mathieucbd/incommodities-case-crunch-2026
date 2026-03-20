@@ -27,6 +27,7 @@ incommodities-case-crunch/
 │   └── outputs/              # Final predictions, catboost logs, and SHAP plots
 ├── notebooks/                # Jupyter notebooks for EDA and prototyping
 ├── src/                      
+│   ├── constants.py          # Shared constants (target column, zone metadata, etc.)
 │   ├── data_ingestion.py     # Scripts to load and merge the European zones
 │   ├── preprocessing.py      # Chronological split, StandardScaler (Train-fitted only)
 │   ├── features.py           # Lag generation, MAD filter, Greedy Feature Selector
@@ -34,6 +35,7 @@ incommodities-case-crunch/
 │   │   ├── baselines.py      # Vectorized Naive model, LEAR (LassoLarsIC rolling window)
 │   │   ├── tree_models.py    # XGBoost, LightGBM, Random Forest, CatBoost
 │   │   ├── deep_learning.py  # Multivariate PyTorch DNN (24-hour tensor output)
+│   │   ├── optimize.py       # Bayesian hyperparameter tuning (TPE)
 │   │   └── ensembles.py      # Quantile Regression Averaging (QRA)
 │   ├── evaluation/
 │   │   ├── metrics.py        # sMAPE, rMAE, MAE (Standalone numpy implementations)
