@@ -24,7 +24,7 @@ from src.constants import TARGET_COL
 
 logger = logging.getLogger(__name__)
 
-def reshape_to_daily(X: pd.DataFrame, y: pd.Series):
+def reshape_to_daily(X: pd.DataFrame, y: pd.Series, augment: bool = False):
     """
     Groups hourly data into blocks of 24 resolving multivariate prediction nodes natively.
     Drops any partial sequences securely preventing dimensional indexing failures.
@@ -32,24 +32,37 @@ def reshape_to_daily(X: pd.DataFrame, y: pd.Series):
         X_daily (N_days, F*24)
         y_daily (N_days, 24)
     """
-    X_copy = X.copy()
-    X_copy['Date'] = X_copy.index.date
-    y_df = pd.DataFrame({'Target': y, 'Date': y.index.date})
-    
     X_daily_list = []
     y_daily_list = []
     
-    for date, group_X in X_copy.groupby('Date'):
-        group_y = y_df[y_df['Date'] == date]
+    if not augment:
+        X_copy = X.copy()
+        X_copy['Date'] = X_copy.index.date
+        y_df = pd.DataFrame({'Target': y, 'Date': y.index.date})
         
-        # We strictly maintain mathematically exact 24 hour batches natively avoiding dimension crashes
-        if len(group_X) == 24 and len(group_y) == 24:
-            x_flat = group_X.drop(columns=['Date']).values.flatten()
-            y_flat = group_y['Target'].values.flatten()
+        for date, group_X in X_copy.groupby('Date'):
+            group_y = y_df[y_df['Date'] == date]
             
-            X_daily_list.append(x_flat)
-            y_daily_list.append(y_flat)
-            
+            # We strictly maintain mathematically exact 24 hour batches natively avoiding dimension crashes
+            if len(group_X) == 24 and len(group_y) == 24:
+                x_flat = group_X.drop(columns=['Date']).values.flatten()
+                y_flat = group_y['Target'].values.flatten()
+                
+                X_daily_list.append(x_flat)
+                y_daily_list.append(y_flat)
+    else:
+        # Augmentation: rolling 24-hour window mapped linearly at exactly 1-hour strides 
+        # producing purely inflated sequences without leakage since train is isolated!
+        n_samples = len(X)
+        X_vals = X.values
+        y_vals = y.values
+        for i in range(n_samples - 23):
+            x_slice = X_vals[i:i+24]
+            y_slice = y_vals[i:i+24]
+            if len(x_slice) == 24 and len(y_slice) == 24:
+                X_daily_list.append(x_slice.flatten())
+                y_daily_list.append(y_slice.flatten())
+                
     return np.array(X_daily_list, dtype=np.float32), np.array(y_daily_list, dtype=np.float32)
 
 class EPFMultivariateDNN(nn.Module):
@@ -205,6 +218,7 @@ if __name__ == "__main__":
     epochs = dnn_config.get('epochs', 150)
     batch_size = dnn_config.get('batch_size', 64)
     val_split = dnn_config.get('validation_split', 0.2)
+    use_data_augmentation = dnn_config.get('use_data_augmentation', False)
     
     target_zone = "DE"
     logger.info("========================================")
@@ -255,10 +269,10 @@ if __name__ == "__main__":
     y_test_s = y_test_s_df[TARGET_COL]
     
     # 3. Reshape continuously into (N_days, F*24) inputs optimizing direct multivariate architectures
-    logger.info("Flattening structurally routing explicit 1D DataFrames directly into 24-D Arrays...")
-    X_train_d, y_train_d = reshape_to_daily(X_train_s, y_train_s)
-    X_val_d, y_val_d = reshape_to_daily(X_val_s, y_val_s)
-    X_test_d, y_test_d = reshape_to_daily(X_test_s, y_test_s)
+    logger.info(f"Flattening structurally routing explicit 1D DataFrames directly into 24-D Arrays (Augmentation={use_data_augmentation})...")
+    X_train_d, y_train_d = reshape_to_daily(X_train_s, y_train_s, augment=use_data_augmentation)
+    X_val_d, y_val_d = reshape_to_daily(X_val_s, y_val_s, augment=False)
+    X_test_d, y_test_d = reshape_to_daily(X_test_s, y_test_s, augment=False)
     
     logger.info(f"Reshaping Array Dimensions Completed:")
     logger.info(f" Train: {X_train_d.shape} | Val: {X_val_d.shape} | Test: {X_test_d.shape}")

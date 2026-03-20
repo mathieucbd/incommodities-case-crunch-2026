@@ -3,6 +3,29 @@ from pathlib import Path
 import yaml
 from src.constants import TARGET_COL, RENEWABLE_COLS, BASELOAD_COLS, DISPATCHABLE_COLS, FILE_SUFFIXES
 
+def normalize_dst(df: pd.DataFrame, tz_str: str = 'Europe/Berlin') -> pd.DataFrame:
+    """
+    Normalizes timezone conversions mechanically eliminating 23-hour or 25-hour DST calendar faults.
+    Spring explicitly pads continuous bounds mapping `.ffill()`.
+    Autumn implicitly merges continuous bounds mapping `.resample('1h').mean()`.
+    """
+    df = df.copy()
+    
+    # Lock exact logical timezone vector natively capturing physical borders
+    df.index = df.index.tz_convert(tz_str)
+    
+    # Rip out awareness mapping exact chronological integer boundaries uniformly 
+    df.index = df.index.tz_localize(None)
+    
+    # Automatically averages duplicate 25th boundaries internally natively!
+    # And exposes exclusively the physical gap during 23h Spring offsets!
+    df = df.resample('1h').mean()
+    
+    # Impute the exposed node natively mapping prior clock sequences 
+    df = df.ffill()
+    
+    return df
+
 def load_and_merge_zone(target_zone: str, raw_dir: str) -> pd.DataFrame:
     """
     Loads spot price, total load, and generation data for a specified zone.
@@ -74,6 +97,9 @@ def load_and_merge_zone(target_zone: str, raw_dir: str) -> pd.DataFrame:
     merged['Dispatchable'] = safe_sum(merged, DISPATCHABLE_COLS)
     
     merged['Residual_Load'] = merged['Total_Load'] - merged['Renewables']
+    
+    # Execute identical DST normalization locking exact sequence bounds exclusively
+    merged = normalize_dst(merged)
     
     return merged
 
