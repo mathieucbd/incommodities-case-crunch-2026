@@ -246,88 +246,126 @@ if __name__ == "__main__":
 
     raw_directory = config.get("data", {}).get("raw_dir", "data/raw/auhack_legacy/")
 
+    val_pred_dir = Path("data/outputs/predictions/val")
+    test_pred_dir = Path("data/outputs/predictions/test")
+    val_pred_dir.mkdir(parents=True, exist_ok=True)
+    test_pred_dir.mkdir(parents=True, exist_ok=True)
+
     dnn_params = config.get("model_settings", {}).get("dnn", {}).copy()
     val_split = dnn_params.get("validation_split", 0.2)
     use_data_augmentation = dnn_params.get("use_data_augmentation", False)
 
-    target_zone = "DE"
-    logger.info("========================================")
-    logger.info(f"Loading Multivariate DNN Evaluation natively for {target_zone}...")
+    target_zones = config.get("data", {}).get("target_zones", ["DE"])
 
-    df = load_and_merge_zone(target_zone, raw_directory)
+    val_preds_dict_dnn = {}
+    test_preds_dict_dnn = {}
+    zone_mae_dnn = {}
 
-    df["Spot_Price_Filtered"] = apply_mad_filter(df[TARGET_COL], window="24h", z=3.0)
-    df = add_deterministic_features(df)
+    for target_zone in target_zones:
+        logger.info("========================================")
+        logger.info(
+            f"Loading Multivariate DNN Evaluation natively for {target_zone}..."
+        )
 
-    lag_targets = ["Spot_Price_Filtered", "Residual_Load"]
-    lags_list = [24, 48, 168]
-    df = create_lags(df, lag_targets, lags_list)
+        df = load_and_merge_zone(target_zone, raw_directory)
 
-    active_features = ["Hour", "DayOfWeek", "Month"]
-    for col in lag_targets:
-        for lag in lags_list:
-            active_features.append(f"{col}_lag_{lag}")
+        df["Spot_Price_Filtered"] = apply_mad_filter(
+            df[TARGET_COL], window="24h", z=3.0
+        )
+        df = add_deterministic_features(df)
 
-    df = df.dropna(subset=active_features + [TARGET_COL])
+        lag_targets = ["Spot_Price_Filtered", "Residual_Load"]
+        lags_list = [24, 48, 168]
+        df = create_lags(df, lag_targets, lags_list)
 
-    logger.info(
-        "Splitting & Applying StandardScaler mathematically locking zero node bias leakages..."
-    )
-    train_df, val_df, test_df = chronological_train_val_test_split(
-        df, val_ratio=val_split, test_ratio=0.15
-    )
+        active_features = ["Hour", "DayOfWeek", "Month"]
+        for col in lag_targets:
+            for lag in lags_list:
+                active_features.append(f"{col}_lag_{lag}")
 
-    # 1. Standardizing features is CRITICAL strictly for gradients
-    X_train_raw = train_df[active_features]
-    y_train_raw = train_df[TARGET_COL]
+        df = df.dropna(subset=active_features + [TARGET_COL])
 
-    X_val_raw = val_df[active_features]
-    y_val_raw = val_df[TARGET_COL]
+        logger.info(
+            "Splitting & Applying StandardScaler mathematically locking zero node bias leakages..."
+        )
+        train_df, val_df, test_df = chronological_train_val_test_split(
+            df, val_ratio=val_split, test_ratio=0.15
+        )
 
-    X_test_raw = test_df[active_features]
-    y_test_raw = test_df[TARGET_COL]
+        # 1. Standardizing features is CRITICAL strictly for gradients
+        X_train_raw = train_df[active_features]
+        y_train_raw = train_df[TARGET_COL]
 
-    X_train_s, X_val_s, X_test_s, scaler = scale_data(
-        X_train_raw, X_val_raw, X_test_raw
-    )
+        X_val_raw = val_df[active_features]
+        y_val_raw = val_df[TARGET_COL]
 
-    # 2. TARGET SCALING (Crucial for Neural Networks)
-    # Temporarily cast Series to singular DataFrames to utilize standardized scale_data efficiently!
-    y_train_df = y_train_raw.to_frame()
-    y_val_df = y_val_raw.to_frame()
-    y_test_df = y_test_raw.to_frame()
+        X_test_raw = test_df[active_features]
+        y_test_raw = test_df[TARGET_COL]
 
-    y_train_s_df, y_val_s_df, y_test_s_df, y_scaler = scale_data(
-        y_train_df, y_val_df, y_test_df
-    )
+        X_train_s, X_val_s, X_test_s, scaler = scale_data(
+            X_train_raw, X_val_raw, X_test_raw
+        )
 
-    # Cast scaling vectors directly back into pandas Series objects identically matching Target format
-    y_train_s = y_train_s_df[TARGET_COL]
-    y_val_s = y_val_s_df[TARGET_COL]
-    y_test_s = y_test_s_df[TARGET_COL]
+        # 2. TARGET SCALING (Crucial for Neural Networks)
+        # Temporarily cast Series to singular DataFrames to utilize standardized scale_data efficiently!
+        y_train_df = y_train_raw.to_frame()
+        y_val_df = y_val_raw.to_frame()
+        y_test_df = y_test_raw.to_frame()
 
-    # 3. Reshape continuously into (N_days, F*24) inputs optimizing direct multivariate architectures
-    logger.info(
-        f"Flattening structurally routing explicit 1D DataFrames directly into 24-D Arrays (Augmentation={use_data_augmentation})..."
-    )
-    X_train_d, y_train_d = reshape_to_daily(
-        X_train_s, y_train_s, augment=use_data_augmentation
-    )
-    X_val_d, y_val_d = reshape_to_daily(X_val_s, y_val_s, augment=False)
-    X_test_d, y_test_d = reshape_to_daily(X_test_s, y_test_s, augment=False)
+        y_train_s_df, y_val_s_df, y_test_s_df, y_scaler = scale_data(
+            y_train_df, y_val_df, y_test_df
+        )
 
-    logger.info(f"Reshaping Array Dimensions Completed:")
-    logger.info(
-        f" Train: {X_train_d.shape} | Val: {X_val_d.shape} | Test: {X_test_d.shape}"
-    )
-    logger.info("========================================")
+        # Cast scaling vectors directly back into pandas Series objects identically matching Target format
+        y_train_s = y_train_s_df[TARGET_COL]
+        y_val_s = y_val_s_df[TARGET_COL]
+        y_test_s = y_test_s_df[TARGET_COL]
 
-    logger.info(f"Initiating Internal PyTorch Compiler Loop (Adam | L1Loss)...")
-    model, device = train_pytorch_dnn(
-        X_train_d, y_train_d, X_val_d, y_val_d, params=dnn_params
-    )
+        # 3. Reshape continuously into (N_days, F*24) inputs optimizing direct multivariate architectures
+        logger.info(
+            f"Flattening structurally routing explicit 1D DataFrames directly into 24-D Arrays (Augmentation={use_data_augmentation})..."
+        )
+        X_train_d, y_train_d = reshape_to_daily(
+            X_train_s, y_train_s, augment=use_data_augmentation
+        )
+        X_val_d, y_val_d = reshape_to_daily(X_val_s, y_val_s, augment=False)
+        X_test_d, y_test_d = reshape_to_daily(X_test_s, y_test_s, augment=False)
 
-    logger.info("========================================")
-    logger.info("--------- Evaluation Metrics -----------")
-    evaluate_dnn(model, device, X_test_d, y_test_d, y_scaler, y_test_raw)
-    logger.info("========================================")
+        logger.info(f"Reshaping Array Dimensions Completed:")
+        logger.info(
+            f" Train: {X_train_d.shape} | Val: {X_val_d.shape} | Test: {X_test_d.shape}"
+        )
+        logger.info("========================================")
+
+        logger.info(f"Initiating Internal PyTorch Compiler Loop (Adam | L1Loss)...")
+        model, device = train_pytorch_dnn(
+            X_train_d, y_train_d, X_val_d, y_val_d, params=dnn_params
+        )
+
+        val_preds_dnn = evaluate_dnn(
+            model, device, X_val_d, y_val_d, y_scaler, y_val_raw
+        )
+        test_preds_dnn = evaluate_dnn(
+            model, device, X_test_d, y_test_d, y_scaler, y_test_raw
+        )
+
+        val_preds_dict_dnn[target_zone] = val_preds_dnn
+        test_preds_dict_dnn[target_zone] = test_preds_dnn
+        y_test_aligned = y_test_raw.loc[test_preds_dnn.index]
+        zone_mae_dnn[target_zone] = MAE(y_test_aligned, test_preds_dnn)
+
+        logger.info("========================================")
+        logger.info("--------- Evaluation Metrics -----------")
+        _ = test_preds_dnn
+        logger.info("========================================")
+
+    # Save multi-zone predictions as DataFrames
+    pd.DataFrame(val_preds_dict_dnn).to_csv(val_pred_dir / "dnn.csv")
+    pd.DataFrame(test_preds_dict_dnn).to_csv(test_pred_dir / "dnn.csv")
+
+    # Macro-averages
+    logger.info("\n========== MACRO AVERAGES ACROSS ZONES ==========")
+    if zone_mae_dnn:
+        avg_mae_dnn = np.mean(list(zone_mae_dnn.values()))
+        logger.info(f"[DNN] Avg MAE: {avg_mae_dnn:.3f} EUR/MWh")
+    logger.info("================================================")

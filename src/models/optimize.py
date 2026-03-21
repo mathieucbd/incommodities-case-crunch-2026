@@ -125,7 +125,7 @@ def objective_cat(params):
         "random_strength": params["random_strength"],
         "early_stopping_rounds": 50,
         "random_state": seed,
-        "train_dir": "data/outputs/catboost_info",
+        "train_dir": "data/outputs/catboost/optimize",
     }
     model = train_catboost(_D["X_tr"], _D["y_tr"], _D["X_va"], _D["y_va"], params=p)
     val_mae = MAE(

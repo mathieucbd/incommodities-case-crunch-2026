@@ -12,6 +12,8 @@ data:
   processed_dir: "data/processed/"
   output_dir: "data/outputs/"
   catboost_logs: "data/outputs/catboost_info/"
+  target_zones: ["AT", "BE", "CH", "CZ", "DE", "DK1", "FR", "NL", "PL"]  # Multi-zone support
+
 
 # 2. PIPELINE TOGGLES
 # ------------------------------------------

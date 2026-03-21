@@ -108,82 +108,137 @@ if __name__ == "__main__":
         .get("calibration_window_days", 182)
     )
 
-    target_zone = "DE"
-    logger.info(f"Establishing Baselines natively for {target_zone}...")
+    val_pred_dir = Path("data/outputs/predictions/val")
+    test_pred_dir = Path("data/outputs/predictions/test")
+    val_pred_dir.mkdir(parents=True, exist_ok=True)
+    test_pred_dir.mkdir(parents=True, exist_ok=True)
 
-    df = load_and_merge_zone(target_zone, raw_directory)
+    target_zones = config.get("data", {}).get("target_zones", ["DE"])
+    val_preds_dict_naive = {}
+    val_preds_dict_lear = {}
+    test_preds_dict_naive = {}
+    test_preds_dict_lear = {}
 
-    # Rapid feature application mimicking our execution loop
-    df["Spot_Price_Filtered"] = apply_mad_filter(df[TARGET_COL], window="24h", z=3.0)
-    df = add_deterministic_features(df)
+    zone_mae_naive = {}
+    zone_mae_lear = {}
 
-    lag_targets = ["Spot_Price_Filtered", "Residual_Load"]
-    lags_list = [24, 48, 168]
-    df = create_lags(df, lag_targets, lags_list)
+    for target_zone in target_zones:
+        logger.info(f"Establishing Baselines natively for {target_zone}...")
 
-    # Filter bounds specifically targeting the requested columns
-    active_features = ["Hour", "DayOfWeek", "Month"]
-    for col in lag_targets:
-        for lag in lags_list:
-            active_features.append(f"{col}_lag_{lag}")
+        df = load_and_merge_zone(target_zone, raw_directory)
 
-    df = df.dropna(subset=active_features + [TARGET_COL])
+        # Rapid feature application mimicking our execution loop
+        df["Spot_Price_Filtered"] = apply_mad_filter(
+            df[TARGET_COL], window="24h", z=3.0
+        )
+        df = add_deterministic_features(df)
 
-    logger.info("Executing Train / Val / Test exact chronological splits...")
-    train_df, val_df, test_df = chronological_train_val_test_split(
-        df, val_ratio=0.15, test_ratio=0.15
-    )
+        lag_targets = ["Spot_Price_Filtered", "Residual_Load"]
+        lags_list = [24, 48, 168]
+        df = create_lags(df, lag_targets, lags_list)
 
-    X_train = train_df[active_features]
-    y_train = train_df[TARGET_COL]
+        # Filter bounds specifically targeting the requested columns
+        active_features = ["Hour", "DayOfWeek", "Month"]
+        for col in lag_targets:
+            for lag in lags_list:
+                active_features.append(f"{col}_lag_{lag}")
 
-    X_val = val_df[active_features]
-    y_val = val_df[TARGET_COL]
+        df = df.dropna(subset=active_features + [TARGET_COL])
 
-    X_test = test_df[active_features]
-    y_test = test_df[TARGET_COL]
+        logger.info("Executing Train / Val / Test exact chronological splits...")
+        train_df, val_df, test_df = chronological_train_val_test_split(
+            df, val_ratio=0.15, test_ratio=0.15
+        )
 
-    logger.info("Scaling features strictly referencing Training distributions...")
-    X_train_s, X_val_s, X_test_s, scaler = scale_data(X_train, X_val, X_test)
+        X_train = train_df[active_features]
+        y_train = train_df[TARGET_COL]
 
-    # We reconstruct the sequentially shifted mathematical arrays uniformly allowing specific slices
-    X_full = pd.concat([X_train_s, X_val_s, X_test_s]).sort_index()
-    y_full = pd.concat([y_train, y_val, y_test]).sort_index()
-    test_idx = X_test.index
+        X_val = val_df[active_features]
+        y_val = val_df[TARGET_COL]
 
-    logger.info("========================================")
-    logger.info(f"Targeting Naive (168h Persistence) across {len(test_idx)} points...")
-    preds_naive = predict_naive(y_full, test_idx, lag_hours=168)
+        X_test = test_df[active_features]
+        y_test = test_df[TARGET_COL]
 
-    logger.info(
-        f"Establishing LEAR pseudo-online calibrations mapping {calibration_window} days..."
-    )
-    preds_lear = predict_lear(
-        X_full, y_full, test_idx, calibration_window_days=calibration_window
-    )
+        logger.info("Scaling features strictly referencing Training distributions...")
+        X_train_s, X_val_s, X_test_s, scaler = scale_data(X_train, X_val, X_test)
 
-    logger.info("========================================")
-    logger.info("--------- Evaluation Metrics -----------")
+        # We reconstruct the sequentially shifted mathematical arrays uniformly allowing specific slices
+        X_full = pd.concat([X_train_s, X_val_s, X_test_s]).sort_index()
+        y_full = pd.concat([y_train, y_val, y_test]).sort_index()
+        val_idx = X_val.index
+        test_idx = X_test.index
 
-    # Validate mathematical alignment maps cleanly
-    valid_naive = ~preds_naive.isna()
-    y_t_n = y_test.loc[valid_naive]
-    p_n = preds_naive.loc[valid_naive]
+        logger.info("========================================")
+        logger.info(
+            f"Targeting Naive (168h Persistence) across {len(test_idx)} points..."
+        )
+        val_preds_naive = predict_naive(y_full, val_idx, lag_hours=168)
+        test_preds_naive = predict_naive(y_full, test_idx, lag_hours=168)
 
-    logger.info("[NAIVE 168h Baseline]")
-    logger.info(f"  MAE:   {MAE(y_t_n, p_n):.3f} EUR/MWh")
-    logger.info(f"  sMAPE: {sMAPE(y_t_n, p_n) * 100:.3f} %")
-    logger.info(f"  rMAE:  {rMAE(y_t_n, p_n, m='W'):.3f}")
+        logger.info(
+            f"Establishing LEAR pseudo-online calibrations mapping {calibration_window} days..."
+        )
+        val_preds_lear = predict_lear(
+            X_full, y_full, val_idx, calibration_window_days=calibration_window
+        )
+        test_preds_lear = predict_lear(
+            X_full, y_full, test_idx, calibration_window_days=calibration_window
+        )
 
-    logger.info("----------------------------------------")
+        logger.info("========================================")
+        logger.info("--------- Evaluation Metrics -----------")
 
-    # Validate LEAR natively dropping execution gaps dynamically
-    valid_lear = ~preds_lear.isna()
-    y_t_l = y_test.loc[valid_lear]
-    p_l = preds_lear.loc[valid_lear]
+        # Validate mathematical alignment maps cleanly
+        valid_naive = ~test_preds_naive.isna()
+        y_t_n = y_test.loc[valid_naive]
+        p_n = test_preds_naive.loc[valid_naive]
 
-    logger.info("[LEAR LassoLarsIC (24-Hour Windows)]")
-    logger.info(f"  MAE:   {MAE(y_t_l, p_l):.3f} EUR/MWh")
-    logger.info(f"  sMAPE: {sMAPE(y_t_l, p_l) * 100:.3f} %")
-    logger.info(f"  rMAE:  {rMAE(y_t_l, p_l, m='W'):.3f}")
-    logger.info("========================================")
+        logger.info(f"[NAIVE 168h Baseline - {target_zone}]")
+        mae_naive = MAE(y_t_n, p_n)
+        smape_naive = sMAPE(y_t_n, p_n) * 100
+        rmae_naive = rMAE(y_t_n, p_n, m="W")
+        logger.info(f"  MAE:   {mae_naive:.3f} EUR/MWh")
+        logger.info(f"  sMAPE: {smape_naive:.3f} %")
+        logger.info(f"  rMAE:  {rmae_naive:.3f}")
+        zone_mae_naive[target_zone] = mae_naive
+
+        # Store predictions for this zone
+        val_preds_dict_naive[target_zone] = val_preds_naive
+        test_preds_dict_naive[target_zone] = test_preds_naive
+
+        logger.info("----------------------------------------")
+
+        # Validate LEAR natively dropping execution gaps dynamically
+        valid_lear = ~test_preds_lear.isna()
+        y_t_l = y_test.loc[valid_lear]
+        p_l = test_preds_lear.loc[valid_lear]
+
+        logger.info(f"[LEAR LassoLarsIC (24-Hour Windows) - {target_zone}]")
+        mae_lear = MAE(y_t_l, p_l)
+        smape_lear = sMAPE(y_t_l, p_l) * 100
+        rmae_lear = rMAE(y_t_l, p_l, m="W")
+        logger.info(f"  MAE:   {mae_lear:.3f} EUR/MWh")
+        logger.info(f"  sMAPE: {smape_lear:.3f} %")
+        logger.info(f"  rMAE:  {rmae_lear:.3f}")
+        zone_mae_lear[target_zone] = mae_lear
+
+        # Store predictions for this zone
+        val_preds_dict_lear[target_zone] = val_preds_lear
+        test_preds_dict_lear[target_zone] = test_preds_lear
+        logger.info("========================================")
+
+    # Save multi-zone predictions as DataFrames
+    pd.DataFrame(val_preds_dict_naive).to_csv(val_pred_dir / "naive.csv")
+    pd.DataFrame(test_preds_dict_naive).to_csv(test_pred_dir / "naive.csv")
+    pd.DataFrame(val_preds_dict_lear).to_csv(val_pred_dir / "lear.csv")
+    pd.DataFrame(test_preds_dict_lear).to_csv(test_pred_dir / "lear.csv")
+
+    # Macro-averages
+    logger.info("\n========== MACRO AVERAGES ACROSS ZONES ==========")
+    if zone_mae_naive:
+        avg_mae_naive = np.mean(list(zone_mae_naive.values()))
+        logger.info(f"[NAIVE 168h Baseline] Avg MAE: {avg_mae_naive:.3f} EUR/MWh")
+    if zone_mae_lear:
+        avg_mae_lear = np.mean(list(zone_mae_lear.values()))
+        logger.info(f"[LEAR LassoLarsIC] Avg MAE: {avg_mae_lear:.3f} EUR/MWh")
+    logger.info("================================================")

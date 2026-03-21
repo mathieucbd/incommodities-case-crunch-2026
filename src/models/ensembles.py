@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import sys
-import torch
 
 # Ensure src is in standard path for execution
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
@@ -14,26 +13,21 @@ from lightgbm import LGBMRegressor
 # Ingestion & Preprocessing
 from src.data_ingestion import load_and_merge_zone
 from src.features import create_lags, add_deterministic_features, apply_mad_filter
-from src.preprocessing import chronological_train_val_test_split, scale_data
+from src.preprocessing import chronological_train_val_test_split
 from src.constants import TARGET_COL
-
-# Models
-from src.models.tree_models import train_lightgbm, train_xgboost, train_catboost
-from src.models.deep_learning import (
-    EPFMultivariateDNN,
-    reshape_to_daily,
-    train_pytorch_dnn,
-)
 
 # Evaluation
 from src.evaluation.probabilistic import pinball_loss, winkler_score
-from src.evaluation.metrics import MAE, sMAPE, rMAE
+from src.evaluation.metrics import MAE
 
 logger = logging.getLogger(__name__)
 
 
 def train_qra(
-    y_true, base_preds: dict, quantiles=[0.05, 0.5, 0.95], params: dict = None
+    y_true,
+    base_preds: dict,
+    quantiles=[0.05, 0.5, 0.95],
+    params: dict | None = None,
 ):
     """
     Trains Quantile Regression Averaging (QRA) using LightGBM as the meta-learner.
@@ -72,202 +66,171 @@ def run_ensemble():
         config = yaml.safe_load(f)
 
     raw_directory = config.get("data", {}).get("raw_dir", "data/raw/auhack_legacy/")
-    use_data_augmentation = (
-        config.get("model_settings", {})
-        .get("dnn", {})
-        .get("use_data_augmentation", True)
-    )
-
-    # 1. Load & Preprocess Data for DE
-    target_zone = "DE"
-    logger.info("========================================")
-    logger.info(
-        f"Initiating Step 4: Quantile Regression Averaging (QRA) for {target_zone}..."
-    )
-
-    df = load_and_merge_zone(target_zone, raw_directory)
-    df["Spot_Price_Filtered"] = apply_mad_filter(df[TARGET_COL], window="24h", z=3.0)
-    df = add_deterministic_features(df)
-
-    lag_targets = ["Spot_Price_Filtered", "Residual_Load"]
-    lags_list = [24, 48, 168]
-    df = create_lags(df, lag_targets, lags_list)
-
-    active_features = ["Hour", "DayOfWeek", "Month"]
-    for col in lag_targets:
-        for lag in lags_list:
-            active_features.append(f"{col}_lag_{lag}")
-
-    df = df.dropna(subset=active_features + [TARGET_COL])
-
-    train_df, val_df, test_df = chronological_train_val_test_split(
-        df, val_ratio=0.15, test_ratio=0.15
-    )
-
-    X_train_raw = train_df[active_features]
-    y_train_raw = train_df[TARGET_COL]
-    X_val_raw = val_df[active_features]
-    y_val_raw = val_df[TARGET_COL]
-    X_test_raw = test_df[active_features]
-    y_test_raw = test_df[TARGET_COL]
-
-    # 2. Get Optimal Params from Config
-    trees_config = config.get("model_settings", {}).get("trees", {})
-    dnn_config = config.get("model_settings", {}).get("dnn", {})
     qra_config = config.get("model_settings", {}).get("qra", {})
     quantiles = qra_config.get("quantiles", [0.05, 0.5, 0.95])
+    target_zones = config.get("data", {}).get("target_zones", ["DE"])
 
-    # 3. Train Base Models and Generate Validation & Test Predictions
-    logger.info("========================================")
-    logger.info("Training Base Models...")
+    val_pred_dir = Path("data/outputs/predictions/val")
+    test_pred_dir = Path("data/outputs/predictions/test")
 
-    # LightGBM
-    logger.info("--> Building LightGBM (1000 trees)...")
-    lgb_params = trees_config.get("lgb", {}).copy()
-    lgb_params["early_stopping_rounds"] = 50
-    model_lgb = train_lightgbm(
-        X_train_raw, y_train_raw, X_val_raw, y_val_raw, params=lgb_params
-    )
-    val_preds_lgb = model_lgb.predict(X_val_raw)
-    test_preds_lgb = model_lgb.predict(X_test_raw)
+    # Macro-tracking dicts
+    zone_mae_qra = {}
+    zone_winkler_qra = {}
 
-    # XGBoost
-    logger.info("--> Building XGBoost (1500 trees)...")
-    xgb_params = trees_config.get("xgb", {}).copy()
-    xgb_params["early_stopping_rounds"] = 50
-    model_xgb = train_xgboost(
-        X_train_raw, y_train_raw, X_val_raw, y_val_raw, params=xgb_params
-    )
-    val_preds_xgb = model_xgb.predict(X_val_raw)
-    test_preds_xgb = model_xgb.predict(X_test_raw)
-
-    # CatBoost
-    logger.info(
-        "--> Building CatBoost (1500 deep trees, this will take a few minutes)..."
-    )
-    cat_params = trees_config.get("cat", {}).copy()
-    cat_params["early_stopping_rounds"] = 50
-    cat_params["train_dir"] = "data/outputs/catboost_info"
-    model_cat = train_catboost(
-        X_train_raw, y_train_raw, X_val_raw, y_val_raw, params=cat_params
-    )
-    val_preds_cat = model_cat.predict(X_val_raw)
-    test_preds_cat = model_cat.predict(X_test_raw)
-
-    # DNN
-    logger.info("--> Training Multivariate PyTorch DNN (150 Epochs limit)...")
-    X_train_s, X_val_s, X_test_s, _ = scale_data(X_train_raw, X_val_raw, X_test_raw)
-    y_train_s_df, y_val_s_df, y_test_s_df, y_scaler = scale_data(
-        y_train_raw.to_frame(), y_val_raw.to_frame(), y_test_raw.to_frame()
-    )
-    y_train_s = y_train_s_df[TARGET_COL]
-    y_val_s = y_val_s_df[TARGET_COL]
-    y_test_s = y_test_s_df[TARGET_COL]
-
-    X_train_d, y_train_d = reshape_to_daily(
-        X_train_s, y_train_s, augment=use_data_augmentation
-    )
-    X_val_d, y_val_d = reshape_to_daily(X_val_s, y_val_s, augment=False)
-    X_test_d, y_test_d = reshape_to_daily(X_test_s, y_test_s, augment=False)
-
-    dnn_params = {
-        "lr": dnn_config.get("learning_rate", 0.001),
-        "dropout_rate": dnn_config.get("dropout_rate", 0.2),
-        "epochs": dnn_config.get("epochs", 150),
-        "batch_size": dnn_config.get("batch_size", 64),
-        "patience": dnn_config.get("patience", 15),
-    }
-    model_dnn, device = train_pytorch_dnn(
-        X_train_d, y_train_d, X_val_d, y_val_d, params=dnn_params
-    )
-
-    def get_dnn_preds(model, X_daily, y_scaler):
-        model.eval()
-        with torch.no_grad():
-            preds = model(torch.tensor(X_daily).to(device)).cpu().numpy().flatten()
-        return y_scaler.inverse_transform(preds.reshape(-1, 1)).flatten()
-
-    test_preds_dnn_full = get_dnn_preds(model_dnn, X_test_d, y_scaler)
-    val_preds_dnn_full = get_dnn_preds(model_dnn, X_val_d, y_scaler)
-
-    # We must align the hourly predictions to the days that were NOT dropped in DNN reshaping
-    # This alignment is tricky. For simplicity, let's create aligned DataFrames.
-
-    def align_preds(df_raw, preds_flattened):
-        df_copy = pd.DataFrame(
-            {"Target": df_raw.values, "Date": df_raw.index.date}, index=df_raw.index
+    for target_zone in target_zones:
+        # 1. Load & Preprocess Data per zone
+        logger.info("========================================")
+        logger.info(
+            f"Initiating Step 4: Blind Quantile Regression Averaging (QRA) for {target_zone}..."
         )
-        valid_indices = []
-        for date, group in df_copy.groupby("Date"):
-            if len(group) == 24:
-                valid_indices.extend(group.index)
-        return pd.Series(preds_flattened, index=valid_indices)
 
-    val_preds_dnn = align_preds(y_val_raw, val_preds_dnn_full)
-    test_preds_dnn = align_preds(y_test_raw, test_preds_dnn_full)
+        df = load_and_merge_zone(target_zone, raw_directory)
+        df["Spot_Price_Filtered"] = apply_mad_filter(
+            df[TARGET_COL], window="24h", z=3.0
+        )
+        df = add_deterministic_features(df)
 
-    # Now align all base models to the DNN valid indices to have a square matrix for QRA
-    common_val_idx = val_preds_dnn.index
-    common_test_idx = test_preds_dnn.index
+        lag_targets = ["Spot_Price_Filtered", "Residual_Load"]
+        lags_list = [24, 48, 168]
+        df = create_lags(df, lag_targets, lags_list)
 
-    val_base_preds = {
-        "LGBM": pd.Series(val_preds_lgb, index=y_val_raw.index).loc[common_val_idx],
-        "XGB": pd.Series(val_preds_xgb, index=y_val_raw.index).loc[common_val_idx],
-        "Cat": pd.Series(val_preds_cat, index=y_val_raw.index).loc[common_val_idx],
-        "DNN": val_preds_dnn,
-    }
+        active_features = ["Hour", "DayOfWeek", "Month"]
+        for col in lag_targets:
+            for lag in lags_list:
+                active_features.append(f"{col}_lag_{lag}")
 
-    test_base_preds = {
-        "LGBM": pd.Series(test_preds_lgb, index=y_test_raw.index).loc[common_test_idx],
-        "XGB": pd.Series(test_preds_xgb, index=y_test_raw.index).loc[common_test_idx],
-        "Cat": pd.Series(test_preds_cat, index=y_test_raw.index).loc[common_test_idx],
-        "DNN": test_preds_dnn,
-    }
+        df = df.dropna(subset=active_features + [TARGET_COL])
 
-    y_val_aligned = y_val_raw.loc[common_val_idx]
-    y_test_aligned = y_test_raw.loc[common_test_idx]
+        _, val_df, test_df = chronological_train_val_test_split(
+            df, val_ratio=0.15, test_ratio=0.15
+        )
 
-    # 4. Train QRA (Params from config)
-    qra_params = qra_config.copy()
-    qra_params.pop("quantiles", None)
-    qra_params.pop("alpha_winkler", None)
-    qra_params["random_state"] = config.get("pipeline", {}).get("global_seed", 42)
-    q_models = train_qra(
-        y_val_aligned, val_base_preds, quantiles=quantiles, params=qra_params
-    )
+        y_val_raw = val_df[TARGET_COL]
+        y_test_raw = test_df[TARGET_COL]
 
-    # 5. Generate Quantile Predictions on Test Set
-    X_test_qra = pd.DataFrame(test_base_preds)
-    q_results = {}
-    for q, model in q_models.items():
-        q_results[q] = model.predict(X_test_qra)
+        def _load_prediction_matrix_zone(folder: Path, zone: str) -> pd.DataFrame:
+            files = sorted(folder.glob("*.csv"))
+            if not files:
+                raise FileNotFoundError(f"No prediction CSV files found in {folder}.")
 
-    # Prevent crossing (Simple post-processing: enforce sorting)
-    q_arr = np.array([q_results[q] for q in sorted(quantiles)])  # (3, N)
-    q_arr.sort(axis=0)
+            series_list = []
+            for file_path in files:
+                pred_df = pd.read_csv(file_path, index_col=0, parse_dates=True)
+                if pred_df.empty:
+                    continue
+                # Extract ONLY the column corresponding to the current zone
+                if zone in pred_df.columns:
+                    pred_s = pred_df[zone]
+                    pred_s.name = file_path.stem.lower()
+                    series_list.append(pred_s)
 
-    for i, q in enumerate(sorted(quantiles)):
-        q_results[q] = q_arr[i]
+            if not series_list:
+                raise ValueError(
+                    f"No usable prediction series found for {zone} in {folder}."
+                )
 
-    # 6. Evaluation
-    logger.info("========================================")
-    logger.info("Ensemble Evaluation (Test Set):")
+            return pd.concat(series_list, axis=1, sort=False).sort_index()
 
-    # Median MAE (q=0.5)
-    mae_05 = MAE(y_test_aligned, q_results[0.5])
-    logger.info(f"QRA Median (0.50) MAE: {mae_05:.3f} EUR/MWh")
+        logger.info("========================================")
+        logger.info(f"Loading base prediction lake from CSVs for {target_zone}...")
+        pred_val_all = _load_prediction_matrix_zone(val_pred_dir, target_zone)
+        pred_test_all = _load_prediction_matrix_zone(test_pred_dir, target_zone)
 
-    # Pinball Loss
-    for q in quantiles:
-        pl = pinball_loss(y_test_aligned, q_results[q], q)
-        logger.info(f"Pinball Loss (q={q}): {pl:.3f}")
+        common_models = sorted(
+            set(pred_val_all.columns).intersection(pred_test_all.columns)
+        )
+        if not common_models:
+            raise ValueError(
+                f"No common model prediction files found between val and test folders for {target_zone}."
+            )
 
-    # Winkler Score (0.05 to 0.95 interval)
-    if 0.05 in q_results and 0.95 in q_results:
-        ws = winkler_score(y_test_aligned, q_results[0.05], q_results[0.95], alpha=0.1)
-        logger.info(f"Winkler Score (90% interval): {ws:.3f}")
+        X_qra_val = pred_val_all[common_models].copy()
+        X_qra_test = pred_test_all[common_models].copy()
 
-    logger.info("========================================")
+        common_val_idx = X_qra_val.index.intersection(y_val_raw.index)
+        common_test_idx = X_qra_test.index.intersection(y_test_raw.index)
+
+        X_qra_val = X_qra_val.loc[common_val_idx].sort_index()
+        y_val_aligned = y_val_raw.loc[X_qra_val.index]
+        val_mask = ~X_qra_val.isna().any(axis=1)
+        X_qra_val = X_qra_val.loc[val_mask]
+        y_val_aligned = y_val_aligned.loc[val_mask]
+
+        if X_qra_val.empty:
+            raise ValueError(
+                f"No aligned validation prediction rows available for QRA training ({target_zone})."
+            )
+
+        X_qra_test = X_qra_test.loc[common_test_idx].sort_index()
+        y_test_aligned = y_test_raw.loc[X_qra_test.index]
+        test_mask = ~X_qra_test.isna().any(axis=1)
+        X_qra_test = X_qra_test.loc[test_mask]
+        y_test_aligned = y_test_aligned.loc[test_mask]
+
+        if X_qra_test.empty:
+            raise ValueError(
+                f"No aligned test prediction rows available for QRA evaluation ({target_zone})."
+            )
+
+        logger.info(f"Loaded models into QRA: {', '.join(common_models)}")
+
+        # 2. Train QRA
+        qra_params = qra_config.copy()
+        qra_params.pop("quantiles", None)
+        qra_params.pop("alpha_winkler", None)
+        qra_params["random_state"] = config.get("pipeline", {}).get("global_seed", 42)
+        q_models = train_qra(
+            y_val_aligned,
+            X_qra_val.to_dict(orient="series"),
+            quantiles=quantiles,
+            params=qra_params,
+        )
+
+        # 3. Generate Quantile Predictions on Test Set
+        q_results = {}
+        for q, model in q_models.items():
+            q_results[q] = model.predict(X_qra_test)
+
+        # Prevent crossing (Simple post-processing: enforce sorting)
+        q_arr = np.array([q_results[q] for q in sorted(quantiles)])  # (3, N)
+        q_arr.sort(axis=0)
+
+        for i, q in enumerate(sorted(quantiles)):
+            q_results[q] = q_arr[i]
+
+        # 4. Evaluation
+        logger.info("========================================")
+        logger.info(f"Ensemble Evaluation (Test Set) - {target_zone}:")
+
+        # Median MAE (q=0.5)
+        mae_05 = MAE(y_test_aligned, q_results[0.5])
+        logger.info(f"QRA Median (0.50) MAE: {mae_05:.3f} EUR/MWh")
+        zone_mae_qra[target_zone] = mae_05
+
+        # Pinball Loss
+        for q in quantiles:
+            pl = pinball_loss(y_test_aligned, q_results[q], q)
+            logger.info(f"Pinball Loss (q={q}): {pl:.3f}")
+
+        # Winkler Score (0.05 to 0.95 interval)
+        if 0.05 in q_results and 0.95 in q_results:
+            ws = winkler_score(
+                y_test_aligned, q_results[0.05], q_results[0.95], alpha=0.1
+            )
+            logger.info(f"Winkler Score (90% interval): {ws:.3f}")
+            zone_winkler_qra[target_zone] = ws
+
+        logger.info("========================================")
+
+    # Macro-averages across zones
+    logger.info("\n========== MACRO AVERAGES ACROSS ZONES ==========")
+    if zone_mae_qra:
+        avg_mae_qra = np.mean(list(zone_mae_qra.values()))
+        logger.info(f"[QRA] Avg MAE: {avg_mae_qra:.3f} EUR/MWh")
+    if zone_winkler_qra:
+        avg_winkler_qra = np.mean(list(zone_winkler_qra.values()))
+        logger.info(f"[QRA] Avg Winkler Score: {avg_winkler_qra:.3f}")
+    logger.info("================================================")
 
 
 if __name__ == "__main__":

@@ -79,18 +79,16 @@ def train_catboost(
     X_val: pd.DataFrame,
     y_val: pd.Series,
     params: dict = None,
+    zone: str = "default",
 ):
     """Trains a CatBoost Regressor mapping explicit categorical features perfectly without one-hot requirements."""
     if params is None:
         params = {}
 
-    potential_cats = ["Hour", "DayOfWeek", "Month"]
-    cat_features = [col for col in potential_cats if col in X_train.columns]
-
-    params["train_dir"] = "data/outputs/catboost_info"
+    params["train_dir"] = f"data/outputs/catboost/{zone}"
 
     model = CatBoostRegressor(verbose=False, **params)
-    model.fit(X_train, y_train, eval_set=(X_val, y_val), cat_features=cat_features)
+    model.fit(X_train, y_train, eval_set=(X_val, y_val))
     return model
 
 
@@ -136,73 +134,151 @@ if __name__ == "__main__":
 
     raw_directory = config.get("data", {}).get("raw_dir", "data/raw/auhack_legacy/")
 
+    val_pred_dir = Path("data/outputs/predictions/val")
+    test_pred_dir = Path("data/outputs/predictions/test")
+    val_pred_dir.mkdir(parents=True, exist_ok=True)
+    test_pred_dir.mkdir(parents=True, exist_ok=True)
+
     lgb_params = config.get("model_settings", {}).get("trees", {}).get("lgb", {}).copy()
     xgb_params = config.get("model_settings", {}).get("trees", {}).get("xgb", {}).copy()
     cat_params = config.get("model_settings", {}).get("trees", {}).get("cat", {}).copy()
     rf_params = config.get("model_settings", {}).get("trees", {}).get("rf", {}).copy()
 
-    target_zone = "DE"
-    logger.info(f"========================================")
-    logger.info(f"Loading Tree Evaluation Pipeline natively for {target_zone}...")
+    target_zones = config.get("data", {}).get("target_zones", ["DE"])
 
-    df = load_and_merge_zone(target_zone, raw_directory)
+    val_preds_dict_lgbm = {}
+    val_preds_dict_xgb = {}
+    val_preds_dict_cat = {}
+    val_preds_dict_rf = {}
+    test_preds_dict_lgbm = {}
+    test_preds_dict_xgb = {}
+    test_preds_dict_cat = {}
+    test_preds_dict_rf = {}
 
-    # 1. Pipeline Feature Alignment
-    df["Spot_Price_Filtered"] = apply_mad_filter(df[TARGET_COL], window="24h", z=3.0)
-    df = add_deterministic_features(df)
+    zone_mae_lgbm = {}
+    zone_mae_xgb = {}
+    zone_mae_cat = {}
+    zone_mae_rf = {}
 
-    lag_targets = ["Spot_Price_Filtered", "Residual_Load"]
-    lags_list = [24, 48, 168]
-    df = create_lags(df, lag_targets, lags_list)
+    for target_zone in target_zones:
+        logger.info(f"========================================")
+        logger.info(f"Loading Tree Evaluation Pipeline natively for {target_zone}...")
 
-    active_features = ["Hour", "DayOfWeek", "Month"]
-    for col in lag_targets:
-        for lag in lags_list:
-            active_features.append(f"{col}_lag_{lag}")
+        df = load_and_merge_zone(target_zone, raw_directory)
 
-    df = df.dropna(subset=active_features + [TARGET_COL])
+        # 1. Pipeline Feature Alignment
+        df["Spot_Price_Filtered"] = apply_mad_filter(
+            df[TARGET_COL], window="24h", z=3.0
+        )
+        df = add_deterministic_features(df)
 
-    # 2. Chronological Subsets Extracting Scaling Limits
-    # Trees operate utilizing relative branching nodes meaning variance Standardization is useless computational overhead.
-    train_df, val_df, test_df = chronological_train_val_test_split(
-        df, val_ratio=0.15, test_ratio=0.15
-    )
+        lag_targets = ["Spot_Price_Filtered", "Residual_Load"]
+        lags_list = [24, 48, 168]
+        df = create_lags(df, lag_targets, lags_list)
 
-    X_train = train_df[active_features]
-    y_train = train_df[TARGET_COL]
-    X_val = val_df[active_features]
-    y_val = val_df[TARGET_COL]
-    X_test = test_df[active_features]
-    y_test = test_df[TARGET_COL]
+        active_features = ["Hour", "DayOfWeek", "Month"]
+        for col in lag_targets:
+            for lag in lags_list:
+                active_features.append(f"{col}_lag_{lag}")
 
-    logger.info(
-        "Executing Train / Val / Test (Tree matrices bypassing Standard Scaler)..."
-    )
-    logger.info("========================================")
+        df = df.dropna(subset=active_features + [TARGET_COL])
 
-    # 3. Model Orchestration
+        # 2. Chronological Subsets Extracting Scaling Limits
+        # Trees operate utilizing relative branching nodes meaning variance Standardization is useless computational overhead.
+        train_df, val_df, test_df = chronological_train_val_test_split(
+            df, val_ratio=0.15, test_ratio=0.15
+        )
 
-    # LightGBM
-    lgb_params["early_stopping_rounds"] = 50
-    logger.info("Training LightGBM (Optimized Config)...")
-    lgb_model = train_lightgbm(X_train, y_train, X_val, y_val, lgb_params)
-    _ = evaluate_model("LightGBM", lgb_model, X_test, y_test)
+        X_train = train_df[active_features]
+        y_train = train_df[TARGET_COL]
+        X_val = val_df[active_features]
+        y_val = val_df[TARGET_COL]
+        X_test = test_df[active_features]
+        y_test = test_df[TARGET_COL]
 
-    # XGBoost
-    xgb_params["early_stopping_rounds"] = 50
-    logger.info("Training XGBoost (Optimized Config)...")
-    xgb_model = train_xgboost(X_train, y_train, X_val, y_val, xgb_params)
-    _ = evaluate_model("XGBoost", xgb_model, X_test, y_test)
+        logger.info(
+            "Executing Train / Val / Test (Tree matrices bypassing Standard Scaler)..."
+        )
+        logger.info("========================================")
 
-    # CatBoost
-    cat_params["early_stopping_rounds"] = 50
-    logger.info("Training CatBoost (Optimized Config)...")
-    cat_model = train_catboost(X_train, y_train, X_val, y_val, cat_params)
-    _ = evaluate_model("CatBoost", cat_model, X_test, y_test)
+        # 3. Model Orchestration
+        # LightGBM
+        lgb_params_zone = lgb_params.copy()
+        lgb_params_zone["early_stopping_rounds"] = 50
+        logger.info("Training LightGBM (Optimized Config)...")
+        lgb_model = train_lightgbm(X_train, y_train, X_val, y_val, lgb_params_zone)
+        val_preds_lgbm = pd.Series(lgb_model.predict(X_val), index=X_val.index)
+        test_preds_lgbm = evaluate_model(
+            f"LightGBM - {target_zone}", lgb_model, X_test, y_test
+        )
+        val_preds_dict_lgbm[target_zone] = val_preds_lgbm
+        test_preds_dict_lgbm[target_zone] = test_preds_lgbm
+        zone_mae_lgbm[target_zone] = MAE(y_test, test_preds_lgbm)
 
-    # RandomForest
-    logger.info("Training RandomForest (Optimized Config)...")
-    rf_model = train_random_forest(X_train, y_train, rf_params)
-    _ = evaluate_model("RandomForest", rf_model, X_test, y_test)
+        # XGBoost
+        xgb_params_zone = xgb_params.copy()
+        xgb_params_zone["early_stopping_rounds"] = 50
+        logger.info("Training XGBoost (Optimized Config)...")
+        xgb_model = train_xgboost(X_train, y_train, X_val, y_val, xgb_params_zone)
+        val_preds_xgb = pd.Series(xgb_model.predict(X_val), index=X_val.index)
+        test_preds_xgb = evaluate_model(
+            f"XGBoost - {target_zone}", xgb_model, X_test, y_test
+        )
+        val_preds_dict_xgb[target_zone] = val_preds_xgb
+        test_preds_dict_xgb[target_zone] = test_preds_xgb
+        zone_mae_xgb[target_zone] = MAE(y_test, test_preds_xgb)
 
-    logger.info("========================================")
+        # CatBoost
+        cat_params_zone = cat_params.copy()
+        cat_params_zone["early_stopping_rounds"] = 50
+        logger.info("Training CatBoost (Optimized Config)...")
+        cat_model = train_catboost(
+            X_train, y_train, X_val, y_val, cat_params_zone, zone=target_zone
+        )
+        val_preds_cat = pd.Series(cat_model.predict(X_val), index=X_val.index)
+        test_preds_cat = evaluate_model(
+            f"CatBoost - {target_zone}", cat_model, X_test, y_test
+        )
+        val_preds_dict_cat[target_zone] = val_preds_cat
+        test_preds_dict_cat[target_zone] = test_preds_cat
+        zone_mae_cat[target_zone] = MAE(y_test, test_preds_cat)
+
+        # RandomForest
+        rf_params_zone = rf_params.copy()
+        logger.info("Training RandomForest (Optimized Config)...")
+        rf_model = train_random_forest(X_train, y_train, rf_params_zone)
+        val_preds_rf = pd.Series(rf_model.predict(X_val), index=X_val.index)
+        test_preds_rf = evaluate_model(
+            f"RandomForest - {target_zone}", rf_model, X_test, y_test
+        )
+        val_preds_dict_rf[target_zone] = val_preds_rf
+        test_preds_dict_rf[target_zone] = test_preds_rf
+        zone_mae_rf[target_zone] = MAE(y_test, test_preds_rf)
+
+        logger.info("========================================")
+
+    # Save multi-zone predictions as DataFrames
+    pd.DataFrame(val_preds_dict_lgbm).to_csv(val_pred_dir / "lgbm.csv")
+    pd.DataFrame(test_preds_dict_lgbm).to_csv(test_pred_dir / "lgbm.csv")
+    pd.DataFrame(val_preds_dict_xgb).to_csv(val_pred_dir / "xgb.csv")
+    pd.DataFrame(test_preds_dict_xgb).to_csv(test_pred_dir / "xgb.csv")
+    pd.DataFrame(val_preds_dict_cat).to_csv(val_pred_dir / "cat.csv")
+    pd.DataFrame(test_preds_dict_cat).to_csv(test_pred_dir / "cat.csv")
+    pd.DataFrame(val_preds_dict_rf).to_csv(val_pred_dir / "rf.csv")
+    pd.DataFrame(test_preds_dict_rf).to_csv(test_pred_dir / "rf.csv")
+
+    # Macro-averages
+    logger.info("\n========== MACRO AVERAGES ACROSS ZONES ==========")
+    if zone_mae_lgbm:
+        avg_mae_lgbm = np.mean(list(zone_mae_lgbm.values()))
+        logger.info(f"[LightGBM] Avg MAE: {avg_mae_lgbm:.3f} EUR/MWh")
+    if zone_mae_xgb:
+        avg_mae_xgb = np.mean(list(zone_mae_xgb.values()))
+        logger.info(f"[XGBoost] Avg MAE: {avg_mae_xgb:.3f} EUR/MWh")
+    if zone_mae_cat:
+        avg_mae_cat = np.mean(list(zone_mae_cat.values()))
+        logger.info(f"[CatBoost] Avg MAE: {avg_mae_cat:.3f} EUR/MWh")
+    if zone_mae_rf:
+        avg_mae_rf = np.mean(list(zone_mae_rf.values()))
+        logger.info(f"[RandomForest] Avg MAE: {avg_mae_rf:.3f} EUR/MWh")
+    logger.info("================================================")
