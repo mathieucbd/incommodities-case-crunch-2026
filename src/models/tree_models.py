@@ -139,10 +139,27 @@ if __name__ == "__main__":
     val_pred_dir.mkdir(parents=True, exist_ok=True)
     test_pred_dir.mkdir(parents=True, exist_ok=True)
 
-    lgb_params = config.get("model_settings", {}).get("trees", {}).get("lgb", {}).copy()
-    xgb_params = config.get("model_settings", {}).get("trees", {}).get("xgb", {}).copy()
-    cat_params = config.get("model_settings", {}).get("trees", {}).get("cat", {}).copy()
-    rf_params = config.get("model_settings", {}).get("trees", {}).get("rf", {}).copy()
+    base_lgb_params = (
+        config.get("model_settings", {}).get("trees", {}).get("lgb", {}).copy()
+    )
+    base_xgb_params = (
+        config.get("model_settings", {}).get("trees", {}).get("xgb", {}).copy()
+    )
+    base_cat_params = (
+        config.get("model_settings", {}).get("trees", {}).get("cat", {}).copy()
+    )
+    base_rf_params = (
+        config.get("model_settings", {}).get("trees", {}).get("rf", {}).copy()
+    )
+
+    try:
+        with open("best_hyperparameters.yaml", "r") as f:
+            best_hyperparams = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        best_hyperparams = {}
+        logger.warning(
+            "best_hyperparameters.yaml not found; falling back to default config.yaml parameters."
+        )
 
     target_zones = config.get("data", {}).get("target_zones", ["DE"])
 
@@ -203,8 +220,11 @@ if __name__ == "__main__":
 
         # 3. Model Orchestration
         # LightGBM
-        lgb_params_zone = lgb_params.copy()
-        lgb_params_zone["early_stopping_rounds"] = 50
+        lgb_params_zone = (
+            best_hyperparams.get("LightGBM", {}).get(target_zone, base_lgb_params)
+            or base_lgb_params
+        ).copy()
+        lgb_params_zone.setdefault("early_stopping_rounds", 50)
         logger.info("Training LightGBM (Optimized Config)...")
         lgb_model = train_lightgbm(X_train, y_train, X_val, y_val, lgb_params_zone)
         val_preds_lgbm = pd.Series(lgb_model.predict(X_val), index=X_val.index)
@@ -216,8 +236,11 @@ if __name__ == "__main__":
         zone_mae_lgbm[target_zone] = MAE(y_test, test_preds_lgbm)
 
         # XGBoost
-        xgb_params_zone = xgb_params.copy()
-        xgb_params_zone["early_stopping_rounds"] = 50
+        xgb_params_zone = (
+            best_hyperparams.get("XGBoost", {}).get(target_zone, base_xgb_params)
+            or base_xgb_params
+        ).copy()
+        xgb_params_zone.setdefault("early_stopping_rounds", 50)
         logger.info("Training XGBoost (Optimized Config)...")
         xgb_model = train_xgboost(X_train, y_train, X_val, y_val, xgb_params_zone)
         val_preds_xgb = pd.Series(xgb_model.predict(X_val), index=X_val.index)
@@ -229,8 +252,11 @@ if __name__ == "__main__":
         zone_mae_xgb[target_zone] = MAE(y_test, test_preds_xgb)
 
         # CatBoost
-        cat_params_zone = cat_params.copy()
-        cat_params_zone["early_stopping_rounds"] = 50
+        cat_params_zone = (
+            best_hyperparams.get("CatBoost", {}).get(target_zone, base_cat_params)
+            or base_cat_params
+        ).copy()
+        cat_params_zone.setdefault("early_stopping_rounds", 50)
         logger.info("Training CatBoost (Optimized Config)...")
         cat_model = train_catboost(
             X_train, y_train, X_val, y_val, cat_params_zone, zone=target_zone
@@ -244,7 +270,10 @@ if __name__ == "__main__":
         zone_mae_cat[target_zone] = MAE(y_test, test_preds_cat)
 
         # RandomForest
-        rf_params_zone = rf_params.copy()
+        rf_params_zone = (
+            best_hyperparams.get("RandomForest", {}).get(target_zone, base_rf_params)
+            or base_rf_params
+        ).copy()
         logger.info("Training RandomForest (Optimized Config)...")
         rf_model = train_random_forest(X_train, y_train, rf_params_zone)
         val_preds_rf = pd.Series(rf_model.predict(X_val), index=X_val.index)

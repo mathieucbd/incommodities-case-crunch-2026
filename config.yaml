@@ -1,91 +1,36 @@
-# ==========================================
-# InCommodities Case Crunch 2026 - Master Config
-# ==========================================
-
-# 1. DATA PATHS
-# ------------------------------------------
 data:
-  # -> FOR SIMULATION: Use the AUHack data
-  raw_dir: "data/raw/auhack_legacy/" 
-  # -> FOR REAL COMPETITION: Uncomment below
-  # raw_dir: "data/raw/case_provided/"
-  processed_dir: "data/processed/"
+  raw_dir: "data/raw/auhack_legacy/"
   output_dir: "data/outputs/"
-  catboost_logs: "data/outputs/catboost_info/"
-  target_zones: ["AT", "BE", "CH", "CZ", "DE", "DK1", "FR", "NL", "PL"]  # Multi-zone support
+  target_zones: ["AT", "BE", "CH", "CZ", "DE", "DK1", "FR", "NL", "PL"]
 
-
-# 2. PIPELINE TOGGLES
-# ------------------------------------------
 pipeline:
   global_seed: 42
-  run_data_ingestion: true
-  run_preprocessing: true
-  run_lear_baseline: true
-  run_tree_models: true
-  run_dnn_multivariate: true
-  run_qra_ensemble: true
-  run_shap_explainability: true
 
-# 3. MODEL HYPERPARAMETERS & SETTINGS
-# ------------------------------------------
 model_settings:
+  # Hyperparameter Optimization settings
+  hyperopt:
+    max_evals: 50
+    trials_dir: "data/outputs/trials/"
+
+  # Baseline (LEAR) settings
   lear:
-    calibration_window_days: 182 
-
-  trees:
-    lgb:
-      n_estimators: 1000
-      learning_rate: 0.023415520872077794
-      num_leaves: 208
-      colsample_bytree: 0.6367616627270904
-      subsample: 0.9915831103319165
-      reg_alpha: 0.3260774971142085
-      reg_lambda: 7.822058785222628
-    xgb:
-      n_estimators: 1500
-      learning_rate: 0.08221328793599435
-      max_depth: 8
-      min_child_weight: 8
-      colsample_bytree: 0.8496392201139591
-      subsample: 0.9962638317751689
-      reg_alpha: 0.012990707838862685
-      reg_lambda: 2.506811381979819
-    cat:
-      n_estimators: 1500
-      learning_rate: 0.00537332196690138
-      depth: 10
-      l2_leaf_reg: 1.4040406107259091
-      random_strength: 0.15576584656725487
-    rf:
-      n_estimators: 500
-      max_depth: 11
-      min_samples_split: 16
-      min_samples_leaf: 4
-
+    calibration_window_days: 182
+    
+  # Deep Learning Structural Settings (Weights are now in artifact)
   dnn:
-    epochs: 150
-    batch_size: 32
+    use_data_augmentation: True
     validation_split: 0.2
-    learning_rate: 0.0001384964748747517
-    dropout_rate: 0.24275315195410302
-    weight_decay: 2.0647793468329406e-05
-    patience: 15
-    use_data_augmentation: true
 
+  # Ensemble (QRA) Settings
   qra:
     quantiles: [0.05, 0.50, 0.95]
-    alpha_winkler: 0.10
+    alpha_winkler: 0.1
+    # We keep QRA tree settings hardcoded here as we didn't run Bayesian tuning on the meta-learner
     n_estimators: 500
     learning_rate: 0.05
     num_leaves: 31
     min_child_samples: 20
 
-  hyperopt:
-    max_evals: 50 
-    trials_dir: "data/outputs/trials/"
-
-# 4. MARKET INTEGRATION (GREEDY ALGORITHM)
-# ------------------------------------------
-zones:
-  target_zones: ["AT", "BE", "CH", "CZ", "DE", "DK1", "DK2", "FR", "NL", "NO2", "PL", "SE4"]
+# Trading / Dispatch settings
+greedy_algorithm:
+  zones: ["AT", "BE", "CH", "CZ", "DE", "DK1", "DK2", "FR", "NL", "NO2", "PL", "SE4"]

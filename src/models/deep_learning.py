@@ -251,9 +251,18 @@ if __name__ == "__main__":
     val_pred_dir.mkdir(parents=True, exist_ok=True)
     test_pred_dir.mkdir(parents=True, exist_ok=True)
 
-    dnn_params = config.get("model_settings", {}).get("dnn", {}).copy()
-    val_split = dnn_params.get("validation_split", 0.2)
-    use_data_augmentation = dnn_params.get("use_data_augmentation", False)
+    base_dnn_params = config.get("model_settings", {}).get("dnn", {}).copy()
+    val_split = base_dnn_params.get("validation_split", 0.2)
+    use_data_augmentation = base_dnn_params.get("use_data_augmentation", False)
+
+    try:
+        with open("best_hyperparameters.yaml", "r") as f:
+            best_hyperparams = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        best_hyperparams = {}
+        logger.warning(
+            "best_hyperparameters.yaml not found; falling back to default config.yaml parameters."
+        )
 
     target_zones = config.get("data", {}).get("target_zones", ["DE"])
 
@@ -338,8 +347,12 @@ if __name__ == "__main__":
         logger.info("========================================")
 
         logger.info(f"Initiating Internal PyTorch Compiler Loop (Adam | L1Loss)...")
+        dnn_params_zone = (
+            best_hyperparams.get("PyTorch DNN", {}).get(target_zone, base_dnn_params)
+            or base_dnn_params
+        ).copy()
         model, device = train_pytorch_dnn(
-            X_train_d, y_train_d, X_val_d, y_val_d, params=dnn_params
+            X_train_d, y_train_d, X_val_d, y_val_d, params=dnn_params_zone
         )
 
         val_preds_dnn = evaluate_dnn(

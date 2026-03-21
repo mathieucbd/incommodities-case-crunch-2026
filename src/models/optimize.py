@@ -258,6 +258,7 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
 
     raw_dir = config["data"]["raw_dir"]
+    target_zones = config["data"]["target_zones"]
     seed = config.get("pipeline", {}).get("global_seed", 42)
     trials_dir = (
         config.get("model_settings", {})
@@ -273,132 +274,158 @@ if __name__ == "__main__":
         .get("use_data_augmentation", True)
     )
 
-    # -----------------------------------------------------------------------
-    # 1. Load & feature-engineer once
-    # -----------------------------------------------------------------------
-    logger.info("========================================")
-    logger.info(f"Loading data (zone=DE, seed={seed}, max_evals={max_evals})...")
+    all_best_params = {}
 
-    df = load_and_merge_zone("DE", raw_dir)
-    df["Spot_Price_Filtered"] = apply_mad_filter(df[TARGET_COL], window="24h", z=3.0)
-    df = add_deterministic_features(df)
-
-    lag_cols = ["Spot_Price_Filtered", "Residual_Load"]
-    lags_list = [24, 48, 168]
-    df = create_lags(df, lag_cols, lags_list)
-
-    features = ["Hour", "DayOfWeek", "Month"] + [
-        f"{c}_lag_{l}" for c in lag_cols for l in lags_list
-    ]
-    df = df.dropna(subset=features + [TARGET_COL])
-
-    train_df, val_df, test_df = chronological_train_val_test_split(
-        df, val_ratio=0.15, test_ratio=0.15
-    )
-
-    # Raw (for trees)
-    X_tr = train_df[features]
-    y_tr = train_df[TARGET_COL]
-    X_va = val_df[features]
-    y_va = val_df[TARGET_COL]
-
-    # Scaled (for DNN)
-    X_tr_s, X_va_s, _, _ = scale_data(X_tr, X_va, test_df[features])
-    y_tr_s_df, y_va_s_df, _, y_scaler = scale_data(
-        y_tr.to_frame(), y_va.to_frame(), test_df[[TARGET_COL]]
-    )
-    y_tr_s = y_tr_s_df[TARGET_COL]
-    y_va_s = y_va_s_df[TARGET_COL]
-
-    X_tr_d, y_tr_d = reshape_to_daily(X_tr_s, y_tr_s, augment=aug)
-    X_va_d, y_va_d = reshape_to_daily(X_va_s, y_va_s, augment=False)
-
-    logger.info(f"Train DNN tensors: {X_tr_d.shape}  Val: {X_va_d.shape}")
-
-    # -----------------------------------------------------------------------
-    # 2. Populate global data container
-    # -----------------------------------------------------------------------
-    Path(trials_dir).mkdir(parents=True, exist_ok=True)
-
-    ckpt_lgb = os.path.join(trials_dir, "lgb_trials.pkl")
-    ckpt_xgb = os.path.join(trials_dir, "xgb_trials.pkl")
-    ckpt_cat = os.path.join(trials_dir, "cat_trials.pkl")
-    ckpt_rf = os.path.join(trials_dir, "rf_trials.pkl")
-    ckpt_dnn = os.path.join(trials_dir, "dnn_trials.pkl")
-
-    trials_lgb = _load_trials(ckpt_lgb)
-    trials_xgb = _load_trials(ckpt_xgb)
-    trials_cat = _load_trials(ckpt_cat)
-    trials_rf = _load_trials(ckpt_rf)
-    trials_dnn = _load_trials(ckpt_dnn)
-
-    _D.update(
-        {
-            "seed": seed,
-            "X_tr": X_tr,
-            "y_tr": y_tr,
-            "X_va": X_va,
-            "y_va": y_va,
-            "X_tr_d": X_tr_d,
-            "y_tr_d": y_tr_d,
-            "X_va_d": X_va_d,
-            "y_va_d": y_va_d,
-            "y_va_raw": y_va,
-            "y_scaler": y_scaler,
-            "trials_lgb": trials_lgb,
-            "ckpt_lgb": ckpt_lgb,
-            "trials_xgb": trials_xgb,
-            "ckpt_xgb": ckpt_xgb,
-            "trials_cat": trials_cat,
-            "ckpt_cat": ckpt_cat,
-            "trials_rf": trials_rf,
-            "ckpt_rf": ckpt_rf,
-            "trials_dnn": trials_dnn,
-            "ckpt_dnn": ckpt_dnn,
-        }
-    )
-
-    # -----------------------------------------------------------------------
-    # 3. Run optimizations — each model picks up from its checkpoint
-    # -----------------------------------------------------------------------
-    models_config = [
-        ("LightGBM", objective_lgb, SPACE_LGB, trials_lgb, ckpt_lgb),
-        ("XGBoost", objective_xgb, SPACE_XGB, trials_xgb, ckpt_xgb),
-        ("CatBoost", objective_cat, SPACE_CAT, trials_cat, ckpt_cat),
-        ("RandomForest", objective_rf, SPACE_RF, trials_rf, ckpt_rf),
-        ("PyTorch DNN", objective_dnn, SPACE_DNN, trials_dnn, ckpt_dnn),
-    ]
-
-    best_params = {}
-    for name, obj_fn, space, trials, ckpt in models_config:
-        already_done = len(trials.trials)
-        remaining = max(0, max_evals - already_done)
-        logger.info(f"========================================")
+    for zone in target_zones:
+        # -------------------------------------------------------------------
+        # 1. Load & feature-engineer for current zone
+        # -------------------------------------------------------------------
+        logger.info("========================================")
         logger.info(
-            f"Tuning {name}: {already_done}/{max_evals} done, running {remaining} more..."
+            f"Loading data (zone={zone}, seed={seed}, max_evals={max_evals})..."
         )
 
-        if remaining > 0:
-            best = fmin(
-                fn=obj_fn,
-                space=space,
-                algo=tpe.suggest,
-                max_evals=max_evals,
-                trials=trials,
-            )
-            _save_trials(trials, ckpt)
-        else:
-            logger.info(f"{name} already fully optimized (checkpoint intact).")
+        df = load_and_merge_zone(zone, raw_dir)
+        df["Spot_Price_Filtered"] = apply_mad_filter(
+            df[TARGET_COL], window="24h", z=3.0
+        )
+        df = add_deterministic_features(df)
 
-        best_params[name] = space_eval(space, trials.argmin)
-        logger.info(f"[BEST] {name}: {best_params[name]}")
+        lag_cols = ["Spot_Price_Filtered", "Residual_Load"]
+        lags_list = [24, 48, 168]
+        df = create_lags(df, lag_cols, lags_list)
+
+        features = ["Hour", "DayOfWeek", "Month"] + [
+            f"{c}_lag_{l}" for c in lag_cols for l in lags_list
+        ]
+        df = df.dropna(subset=features + [TARGET_COL])
+
+        train_df, val_df, test_df = chronological_train_val_test_split(
+            df, val_ratio=0.15, test_ratio=0.15
+        )
+
+        # Raw (for trees)
+        X_tr = train_df[features]
+        y_tr = train_df[TARGET_COL]
+        X_va = val_df[features]
+        y_va = val_df[TARGET_COL]
+
+        # Scaled (for DNN)
+        X_tr_s, X_va_s, _, _ = scale_data(X_tr, X_va, test_df[features])
+        y_tr_s_df, y_va_s_df, _, y_scaler = scale_data(
+            y_tr.to_frame(), y_va.to_frame(), test_df[[TARGET_COL]]
+        )
+        y_tr_s = y_tr_s_df[TARGET_COL]
+        y_va_s = y_va_s_df[TARGET_COL]
+
+        X_tr_d, y_tr_d = reshape_to_daily(X_tr_s, y_tr_s, augment=aug)
+        X_va_d, y_va_d = reshape_to_daily(X_va_s, y_va_s, augment=False)
+
+        logger.info(f"Train DNN tensors ({zone}): {X_tr_d.shape}  Val: {X_va_d.shape}")
+
+        # -------------------------------------------------------------------
+        # 2. Populate global data container and zone-specific checkpoints
+        # -------------------------------------------------------------------
+        zone_trials_dir = os.path.join(trials_dir, zone)
+        Path(zone_trials_dir).mkdir(parents=True, exist_ok=True)
+
+        ckpt_lgb = os.path.join(zone_trials_dir, "lgb_trials.pkl")
+        ckpt_xgb = os.path.join(zone_trials_dir, "xgb_trials.pkl")
+        ckpt_cat = os.path.join(zone_trials_dir, "cat_trials.pkl")
+        ckpt_rf = os.path.join(zone_trials_dir, "rf_trials.pkl")
+        ckpt_dnn = os.path.join(zone_trials_dir, "dnn_trials.pkl")
+
+        trials_lgb = _load_trials(ckpt_lgb)
+        trials_xgb = _load_trials(ckpt_xgb)
+        trials_cat = _load_trials(ckpt_cat)
+        trials_rf = _load_trials(ckpt_rf)
+        trials_dnn = _load_trials(ckpt_dnn)
+
+        _D.update(
+            {
+                "seed": seed,
+                "X_tr": X_tr,
+                "y_tr": y_tr,
+                "X_va": X_va,
+                "y_va": y_va,
+                "X_tr_d": X_tr_d,
+                "y_tr_d": y_tr_d,
+                "X_va_d": X_va_d,
+                "y_va_d": y_va_d,
+                "y_va_raw": y_va,
+                "y_scaler": y_scaler,
+                "trials_lgb": trials_lgb,
+                "ckpt_lgb": ckpt_lgb,
+                "trials_xgb": trials_xgb,
+                "ckpt_xgb": ckpt_xgb,
+                "trials_cat": trials_cat,
+                "ckpt_cat": ckpt_cat,
+                "trials_rf": trials_rf,
+                "ckpt_rf": ckpt_rf,
+                "trials_dnn": trials_dnn,
+                "ckpt_dnn": ckpt_dnn,
+            }
+        )
+
+        # -------------------------------------------------------------------
+        # 3. Run optimizations — each model picks up from zone checkpoint
+        # -------------------------------------------------------------------
+        models_config = [
+            ("LightGBM", objective_lgb, SPACE_LGB, trials_lgb, ckpt_lgb),
+            ("XGBoost", objective_xgb, SPACE_XGB, trials_xgb, ckpt_xgb),
+            ("CatBoost", objective_cat, SPACE_CAT, trials_cat, ckpt_cat),
+            ("RandomForest", objective_rf, SPACE_RF, trials_rf, ckpt_rf),
+            ("PyTorch DNN", objective_dnn, SPACE_DNN, trials_dnn, ckpt_dnn),
+        ]
+
+        best_params = {}
+        for name, obj_fn, space, trials, ckpt in models_config:
+            already_done = len(trials.trials)
+            remaining = max(0, max_evals - already_done)
+            logger.info(f"========================================")
+            logger.info(
+                f"[{zone}] Tuning {name}: {already_done}/{max_evals} done, running {remaining} more..."
+            )
+
+            if remaining > 0:
+                fmin(
+                    fn=obj_fn,
+                    space=space,
+                    algo=tpe.suggest,
+                    max_evals=max_evals,
+                    trials=trials,
+                )
+                _save_trials(trials, ckpt)
+            else:
+                logger.info(
+                    f"[{zone}] {name} already fully optimized (checkpoint intact)."
+                )
+
+            best_params[name] = space_eval(space, trials.argmin)
+            logger.info(f"[{zone}] [BEST] {name}: {best_params[name]}")
+
+        all_best_params[zone] = best_params
 
     # -----------------------------------------------------------------------
-    # 4. Final summary
+    # 4. Final summary across all zones
     # -----------------------------------------------------------------------
     logger.info("========================================")
-    logger.info("======== OPTIMAL HYPERPARAMETERS =======")
-    for name, params in best_params.items():
-        logger.info(f"{name:15s}: {params}")
+    logger.info("=== PAN-EUROPEAN OPTIMAL HYPERPARAMETERS ===")
+    for zone, params_by_model in all_best_params.items():
+        logger.info(f"\nZONE: {zone}")
+        logger.info("----------------------------------------")
+        for name, params in params_by_model.items():
+            logger.info(f"{name:15s}: {params}")
+
+    artifact_by_model = {}
+    for zone, params_by_model in all_best_params.items():
+        for model_name, params in params_by_model.items():
+            artifact_by_model.setdefault(model_name, {})[zone] = params
+
+    artifact_path = Path("best_hyperparameters.yaml")
+    with open(artifact_path, "w") as f:
+        yaml.dump(artifact_by_model, f, default_flow_style=False)
+
+    logger.info(f"Saved parameter artifact: {artifact_path}")
     logger.info("========================================")
     logger.info("Copy these values into config.yaml -> model_settings!")
