@@ -76,6 +76,7 @@ def run_ensemble():
     # Macro-tracking dicts
     zone_mae_qra = {}
     zone_winkler_qra = {}
+    test_preds_dict_qra = {}
 
     for target_zone in target_zones:
         # 1. Load & Preprocess Data per zone
@@ -198,6 +199,11 @@ def run_ensemble():
         for i, q in enumerate(sorted(quantiles)):
             q_results[q] = q_arr[i]
 
+        # Persist median QRA prediction for this zone in the prediction lake
+        test_preds_dict_qra[target_zone] = pd.Series(
+            q_results[0.5], index=X_qra_test.index
+        )
+
         # 4. Evaluation
         logger.info("========================================")
         logger.info(f"Ensemble Evaluation (Test Set) - {target_zone}:")
@@ -230,6 +236,11 @@ def run_ensemble():
     if zone_winkler_qra:
         avg_winkler_qra = np.mean(list(zone_winkler_qra.values()))
         logger.info(f"[QRA] Avg Winkler Score: {avg_winkler_qra:.3f}")
+
+    # Save multi-zone QRA median predictions to the Prediction Lake
+    pd.DataFrame(test_preds_dict_qra).to_csv(
+        "data/outputs/predictions/test/qra_median.csv"
+    )
     logger.info("================================================")
 
 

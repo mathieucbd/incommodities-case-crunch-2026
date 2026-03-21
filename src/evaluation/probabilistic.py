@@ -1,7 +1,8 @@
 import numpy as np
 
+
 def pinball_loss(y_true, y_pred, tau):
-    """
+    r"""
     Author: Jesus Lago (Adapted for standalone pipeline)
     Calculates the pinball loss for a specific quantile.
 
@@ -26,8 +27,9 @@ def pinball_loss(y_true, y_pred, tau):
     y_pred = np.array(y_pred).flatten()
     return np.mean(np.maximum(tau * (y_true - y_pred), (tau - 1) * (y_true - y_pred)))
 
+
 def winkler_score(y_true, lower, upper, alpha=0.1):
-    """
+    r"""
     Author: Jesus Lago (Adapted for standalone pipeline)
     Calculates the Winkler score for a prediction interval.
 
@@ -53,9 +55,9 @@ def winkler_score(y_true, lower, upper, alpha=0.1):
     y_true = np.array(y_true).flatten()
     lower = np.array(lower).flatten()
     upper = np.array(upper).flatten()
-    
+
     diff = upper - lower
     lower_penalty = (2 / alpha) * (lower - y_true) * (y_true < lower)
     upper_penalty = (2 / alpha) * (y_true - upper) * (y_true > upper)
-    
+
     return np.mean(diff + lower_penalty + upper_penalty)
