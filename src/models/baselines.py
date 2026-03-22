@@ -5,9 +5,14 @@ import pandas as pd
 from pathlib import Path
 from sklearn.linear_model import LassoLarsIC, Lasso
 import sys
+import warnings
+from sklearn.exceptions import ConvergenceWarning
 
 # Ensure src is in standard path for execution
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+
+# Suppress convergence warnings from coordinate descent with large feature matrices
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 from src.data_ingestion import load_and_merge_zone
 from src.features import build_features
@@ -82,9 +87,9 @@ def predict_lear(
 
             # 3. Instantiate, Fit, and Predict isolated LEAR hourly model
             model = (
-                LassoLarsIC(criterion="aic")
+                LassoLarsIC(criterion="aic", max_iter=10000)
                 if alpha is None
-                else Lasso(alpha=alpha, max_iter=10000, random_state=42)
+                else Lasso(alpha=alpha, max_iter=10000, tol=1e-3, random_state=42)
             )
             try:
                 model.fit(X_calib_h, y_calib_h)

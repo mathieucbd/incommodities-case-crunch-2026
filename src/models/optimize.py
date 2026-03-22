@@ -12,10 +12,15 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import sys
+import warnings
+from sklearn.exceptions import ConvergenceWarning
 import torch
 from sklearn.linear_model import Lasso
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+
+# Suppress convergence warnings from coordinate descent with large feature matrices
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
 from lightgbm import LGBMRegressor
@@ -405,9 +410,9 @@ if __name__ == "__main__":
 
     raw_dir = config["data"]["raw_dir"]
     target_zones = config["data"]["target_zones"]
-    flow_only_zones = config["data"].get("flow_only_zones", [])
-    all_zones = target_zones + flow_only_zones
-    raw_data_dict = {z: load_and_merge_zone(z, raw_dir) for z in all_zones}
+    # Load only target zones (those with complete spot price, load, generation data)
+    # Flow-only zones (DK2, NO2, SE4) lack spot prices and won't contribute to neighbor features
+    raw_data_dict = {z: load_and_merge_zone(z, raw_dir) for z in target_zones}
 
     missing_targets = [z for z in target_zones if z not in raw_data_dict]
     if missing_targets:
@@ -566,11 +571,23 @@ if __name__ == "__main__":
 
         best_params = {}
         for name, obj_fn, space, trials, ckpt in models_config:
+            # Asymmetric Tuning Budget
+            if name == "LEAR":
+                current_max_evals = min(15, max_evals)  # Cap LEAR at 15 trials
+            elif name in ["RandomForest", "CatBoost"]:
+                current_max_evals = min(
+                    30, max_evals
+                )  # Moderate budget for slower trees
+            else:
+                current_max_evals = (
+                    max_evals  # Full budget for LightGBM, XGBoost, PyTorch DNN, QRA
+                )
+
             already_done = len(trials.trials)
-            remaining = max(0, max_evals - already_done)
+            remaining = max(0, current_max_evals - already_done)
             logger.info(f"========================================")
             logger.info(
-                f"[{zone}] Tuning {name}: {already_done}/{max_evals} done, running {remaining} more..."
+                f"[{zone}] Tuning {name}: {already_done}/{current_max_evals} done, running {remaining} more..."
             )
 
             if remaining > 0:
@@ -578,7 +595,7 @@ if __name__ == "__main__":
                     fn=obj_fn,
                     space=space,
                     algo=tpe.suggest,
-                    max_evals=max_evals,
+                    max_evals=current_max_evals,
                     trials=trials,
                 )
                 _save_trials(trials, ckpt)
