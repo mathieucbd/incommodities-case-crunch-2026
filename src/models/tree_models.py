@@ -21,6 +21,24 @@ from sklearn.ensemble import RandomForestRegressor
 
 logger = logging.getLogger(__name__)
 
+INT_PARAMS = [
+    "num_leaves",
+    "max_depth",
+    "n_estimators",
+    "min_child_weight",
+    "min_samples_leaf",
+    "min_samples_split",
+    "batch_size",
+    "depth",
+]
+
+
+def sanitize_int_params(params: dict) -> dict:
+    for param in INT_PARAMS:
+        if param in params and params[param] is not None:
+            params[param] = int(params[param])
+    return params
+
 
 def train_lightgbm(
     X_train: pd.DataFrame,
@@ -224,6 +242,7 @@ if __name__ == "__main__":
             best_hyperparams.get("LightGBM", {}).get(target_zone, base_lgb_params)
             or base_lgb_params
         ).copy()
+        lgb_params_zone = sanitize_int_params(lgb_params_zone)
         lgb_params_zone.setdefault("early_stopping_rounds", 50)
         logger.info("Training LightGBM (Optimized Config)...")
         lgb_model = train_lightgbm(X_train, y_train, X_val, y_val, lgb_params_zone)
@@ -240,6 +259,7 @@ if __name__ == "__main__":
             best_hyperparams.get("XGBoost", {}).get(target_zone, base_xgb_params)
             or base_xgb_params
         ).copy()
+        xgb_params_zone = sanitize_int_params(xgb_params_zone)
         xgb_params_zone.setdefault("early_stopping_rounds", 50)
         logger.info("Training XGBoost (Optimized Config)...")
         xgb_model = train_xgboost(X_train, y_train, X_val, y_val, xgb_params_zone)
@@ -256,6 +276,7 @@ if __name__ == "__main__":
             best_hyperparams.get("CatBoost", {}).get(target_zone, base_cat_params)
             or base_cat_params
         ).copy()
+        cat_params_zone = sanitize_int_params(cat_params_zone)
         cat_params_zone.setdefault("early_stopping_rounds", 50)
         logger.info("Training CatBoost (Optimized Config)...")
         cat_model = train_catboost(
@@ -274,6 +295,7 @@ if __name__ == "__main__":
             best_hyperparams.get("RandomForest", {}).get(target_zone, base_rf_params)
             or base_rf_params
         ).copy()
+        rf_params_zone = sanitize_int_params(rf_params_zone)
         logger.info("Training RandomForest (Optimized Config)...")
         rf_model = train_random_forest(X_train, y_train, rf_params_zone)
         val_preds_rf = pd.Series(rf_model.predict(X_val), index=X_val.index)

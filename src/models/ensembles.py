@@ -22,6 +22,24 @@ from src.evaluation.metrics import MAE
 
 logger = logging.getLogger(__name__)
 
+INT_PARAMS = [
+    "num_leaves",
+    "max_depth",
+    "n_estimators",
+    "min_child_weight",
+    "min_samples_leaf",
+    "min_samples_split",
+    "batch_size",
+    "depth",
+]
+
+
+def sanitize_int_params(params: dict) -> dict:
+    for param in INT_PARAMS:
+        if param in params and params[param] is not None:
+            params[param] = int(params[param])
+    return params
+
 
 def train_qra(
     y_true,
@@ -190,6 +208,7 @@ def run_ensemble():
             best_hyperparams.get("QRA", {}).get(target_zone, config_qra_params)
             or config_qra_params
         ).copy()
+        qra_params_zone = sanitize_int_params(qra_params_zone)
         qra_params_zone["quantiles"] = quantiles
         qra_params_zone["random_state"] = global_seed
         q_models = train_qra(

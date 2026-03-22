@@ -22,6 +22,24 @@ from src.constants import TARGET_COL
 
 logger = logging.getLogger(__name__)
 
+INT_PARAMS = [
+    "num_leaves",
+    "max_depth",
+    "n_estimators",
+    "min_child_weight",
+    "min_samples_leaf",
+    "min_samples_split",
+    "batch_size",
+    "depth",
+]
+
+
+def sanitize_int_params(params: dict) -> dict:
+    for param in INT_PARAMS:
+        if param in params and params[param] is not None:
+            params[param] = int(params[param])
+    return params
+
 
 def reshape_to_daily(X: pd.DataFrame, y: pd.Series, augment: bool = False):
     """
@@ -351,6 +369,7 @@ if __name__ == "__main__":
             best_hyperparams.get("PyTorch DNN", {}).get(target_zone, base_dnn_params)
             or base_dnn_params
         ).copy()
+        dnn_params_zone = sanitize_int_params(dnn_params_zone)
         model, device = train_pytorch_dnn(
             X_train_d, y_train_d, X_val_d, y_val_d, params=dnn_params_zone
         )
