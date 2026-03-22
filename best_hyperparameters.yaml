@@ -53,6 +53,34 @@ CatBoost:
     learning_rate: 0.09831107517222384
     n_estimators: 1500
     random_strength: 1.312169755364952
+LEAR:
+  AT:
+    alpha: 1.2932732459354725
+    calibration_window: 364
+  BE:
+    alpha: 4.286823001569413
+    calibration_window: 364
+  CH:
+    alpha: 1.0061180257165143
+    calibration_window: 364
+  CZ:
+    alpha: 4.658815836013401
+    calibration_window: 364
+  DE:
+    alpha: 8.225530366929231
+    calibration_window: 182
+  DK1:
+    alpha: 9.987960355334227
+    calibration_window: 182
+  FR:
+    alpha: 9.833240817856504
+    calibration_window: 364
+  NL:
+    alpha: 5.246010069856575
+    calibration_window: 364
+  PL:
+    alpha: 1.0786787872271726
+    calibration_window: 112
 LightGBM:
   AT:
     colsample_bytree: 0.8073912294490804
@@ -172,6 +200,79 @@ PyTorch DNN:
     dropout_rate: 0.21399995371248393
     lr: 0.0037850020659469606
     weight_decay: 1.8037021093892634e-05
+QRA:
+  AT:
+    colsample_bytree: 0.8819963311025105
+    learning_rate: 0.09781366489321487
+    n_estimators: 1000
+    num_leaves: 124.0
+    reg_alpha: 0.11719992377952874
+    reg_lambda: 0.7620110514215551
+    subsample: 0.9350827292056166
+  BE:
+    colsample_bytree: 0.8724710280453496
+    learning_rate: 0.07915311216892477
+    n_estimators: 1500
+    num_leaves: 180.0
+    reg_alpha: 0.06418223542669874
+    reg_lambda: 0.08056824521739883
+    subsample: 0.7855081813437244
+  CH:
+    colsample_bytree: 0.9784007316841928
+    learning_rate: 0.08867896597620326
+    n_estimators: 1500
+    num_leaves: 197.0
+    reg_alpha: 0.002090284418244635
+    reg_lambda: 0.2991378412280593
+    subsample: 0.6375499246982682
+  CZ:
+    colsample_bytree: 0.8056231251230732
+    learning_rate: 0.08301433328377812
+    n_estimators: 1500
+    num_leaves: 191.0
+    reg_alpha: 0.000787509150292826
+    reg_lambda: 0.0006988983890313918
+    subsample: 0.6713657007164666
+  DE:
+    colsample_bytree: 0.7870859164406314
+    learning_rate: 0.0986880389570929
+    n_estimators: 1000
+    num_leaves: 205.0
+    reg_alpha: 0.028119959459599036
+    reg_lambda: 0.139981211315386
+    subsample: 0.5553121212212272
+  DK1:
+    colsample_bytree: 0.6828334276075447
+    learning_rate: 0.09753852050705102
+    n_estimators: 1500
+    num_leaves: 256.0
+    reg_alpha: 0.004858080178112644
+    reg_lambda: 0.005924407710834252
+    subsample: 0.6831001842710954
+  FR:
+    colsample_bytree: 0.8308881156067917
+    learning_rate: 0.09184864735737917
+    n_estimators: 1500
+    num_leaves: 196.0
+    reg_alpha: 0.6384532783231753
+    reg_lambda: 0.0013558904431644737
+    subsample: 0.7794065437288081
+  NL:
+    colsample_bytree: 0.8694428425252746
+    learning_rate: 0.09057297286377793
+    n_estimators: 1500
+    num_leaves: 205.0
+    reg_alpha: 0.06476494709404544
+    reg_lambda: 0.0002146421663729487
+    subsample: 0.7637857369216796
+  PL:
+    colsample_bytree: 0.9978114154258922
+    learning_rate: 0.09720670941487178
+    n_estimators: 1000
+    num_leaves: 253.0
+    reg_alpha: 0.1993399824022931
+    reg_lambda: 0.13716715993937206
+    subsample: 0.8288300528557485
 RandomForest:
   AT:
     max_depth: 10.0

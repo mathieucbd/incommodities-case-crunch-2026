@@ -13,16 +13,19 @@ import pandas as pd
 from pathlib import Path
 import sys
 import torch
+from sklearn.linear_model import Lasso
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
+from lightgbm import LGBMRegressor
 
 from src.data_ingestion import load_and_merge_zone
 from src.features import create_lags, add_deterministic_features, apply_mad_filter
 from src.preprocessing import chronological_train_val_test_split, scale_data
 from src.constants import TARGET_COL
-from src.evaluation.metrics import MAE, sMAPE, rMAE
+from src.evaluation.metrics import MAE
+from src.evaluation.probabilistic import pinball_loss
 
 from src.models.tree_models import (
     train_lightgbm,
@@ -31,6 +34,7 @@ from src.models.tree_models import (
     train_random_forest,
 )
 from src.models.deep_learning import reshape_to_daily, train_pytorch_dnn
+from src.models.baselines import predict_lear as train_lear
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +67,27 @@ def _save_trials(trials: Trials, path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
         pickle.dump(trials, f)
+
+
+def _load_prediction_matrix_zone(folder: Path, zone: str) -> pd.DataFrame:
+    files = sorted(folder.glob("*.csv"))
+    if not files:
+        raise FileNotFoundError(f"No prediction CSV files found in {folder}.")
+
+    series_list = []
+    for file_path in files:
+        pred_df = pd.read_csv(file_path, index_col=0, parse_dates=True)
+        if pred_df.empty:
+            continue
+        if zone in pred_df.columns:
+            pred_s = pred_df[zone]
+            pred_s.name = file_path.stem.lower()
+            series_list.append(pred_s)
+
+    if not series_list:
+        raise ValueError(f"No usable prediction series found for {zone} in {folder}.")
+
+    return pd.concat(series_list, axis=1, sort=False).sort_index()
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +219,112 @@ def objective_dnn(params):
     return {"loss": val_mae, "status": STATUS_OK}
 
 
+def _predict_lear_with_alpha(
+    X_full: pd.DataFrame,
+    y_full: pd.Series,
+    test_indices: pd.DatetimeIndex,
+    calibration_window_days: int,
+    alpha: float,
+) -> pd.Series:
+    """Equivalent LEAR-like hourly rolling calibration using Lasso(alpha)."""
+    unique_test_days = np.unique(test_indices.date)
+    predictions = pd.Series(index=test_indices, dtype=float)
+
+    for current_date in unique_test_days:
+        current_date_ts = pd.Timestamp(
+            current_date, tz=test_indices.tz if hasattr(test_indices, "tz") else "UTC"
+        )
+        window_start = current_date_ts - pd.Timedelta(days=calibration_window_days)
+
+        mask_train = (X_full.index >= window_start) & (X_full.index < current_date_ts)
+        X_calib = X_full.loc[mask_train]
+        y_calib = y_full.loc[mask_train]
+
+        mask_test = test_indices.date == current_date
+        day_test_indices = test_indices[mask_test]
+        X_test_day = X_full.loc[day_test_indices]
+
+        for hour in range(24):
+            hour_mask_calib = X_calib.index.hour == hour
+            if not hour_mask_calib.any():
+                continue
+
+            X_calib_h = X_calib.loc[hour_mask_calib]
+            y_calib_h = y_calib.loc[hour_mask_calib]
+
+            hour_mask_test = X_test_day.index.hour == hour
+            if not hour_mask_test.any():
+                continue
+
+            X_test_h = X_test_day.loc[hour_mask_test]
+
+            model = Lasso(alpha=alpha, max_iter=10000, random_state=_D["seed"])
+            try:
+                model.fit(X_calib_h, y_calib_h)
+                preds = model.predict(X_test_h)
+                predictions.loc[X_test_h.index] = preds
+            except Exception:
+                predictions.loc[X_test_h.index] = y_calib_h.mean()
+
+    return predictions
+
+
+def objective_lear(params):
+    calibration_window = int(params["calibration_window"])
+    alpha = float(params["alpha"])
+
+    X_full = pd.concat([_D["X_tr"], _D["X_va"]]).sort_index()
+    y_full = pd.concat([_D["y_tr"], _D["y_va"]]).sort_index()
+    val_idx = _D["X_va"].index
+
+    try:
+        # Keep compatibility with baseline LEAR implementation if signature is extended.
+        val_preds = train_lear(
+            X_full,
+            y_full,
+            val_idx,
+            calibration_window_days=calibration_window,
+            alpha=alpha,
+        )
+    except TypeError:
+        # Fallback equivalent LEAR implementation with tunable alpha.
+        val_preds = _predict_lear_with_alpha(
+            X_full,
+            y_full,
+            val_idx,
+            calibration_window_days=calibration_window,
+            alpha=alpha,
+        )
+
+    valid_mask = ~val_preds.isna()
+    val_mae = MAE(_D["y_va"].loc[valid_mask], val_preds.loc[valid_mask])
+    _save_trials(_D["trials_lear"], _D["ckpt_lear"])
+    return {"loss": val_mae, "status": STATUS_OK}
+
+
+def objective_qra(params):
+    p = {
+        "objective": "quantile",
+        "alpha": 0.5,
+        "n_estimators": int(params["n_estimators"]),
+        "learning_rate": params["learning_rate"],
+        "num_leaves": int(params["num_leaves"]),
+        "colsample_bytree": params["colsample_bytree"],
+        "subsample": params["subsample"],
+        "reg_alpha": params["reg_alpha"],
+        "reg_lambda": params["reg_lambda"],
+        "random_state": _D["seed"],
+        "verbose": -1,
+    }
+
+    model = LGBMRegressor(**p)
+    model.fit(_D["X_qra_va"], _D["y_va_aligned"])
+    qra_pred = model.predict(_D["X_qra_va"])
+    val_pinball = pinball_loss(_D["y_va_aligned"], qra_pred, 0.5)
+    _save_trials(_D["trials_qra"], _D["ckpt_qra"])
+    return {"loss": val_pinball, "status": STATUS_OK}
+
+
 # ---------------------------------------------------------------------------
 # Search spaces
 # ---------------------------------------------------------------------------
@@ -239,6 +370,21 @@ SPACE_DNN = {
     "dropout_rate": hp.uniform("dnn_drop", 0.1, 0.5),
     "weight_decay": hp.loguniform("dnn_wd", np.log(1e-6), np.log(1e-2)),
     "batch_size": hp.choice("dnn_bs", [32, 64, 128]),
+}
+
+SPACE_LEAR = {
+    "calibration_window": hp.choice("lear_cw", [56, 84, 112, 182, 364]),
+    "alpha": hp.loguniform("lear_alpha", np.log(1e-4), np.log(10.0)),
+}
+
+SPACE_QRA = {
+    "n_estimators": hp.choice("qra_n_est", [500, 1000, 1500]),
+    "learning_rate": hp.loguniform("qra_lr", np.log(0.001), np.log(0.1)),
+    "num_leaves": hp.quniform("qra_leaves", 20, 256, 1),
+    "colsample_bytree": hp.uniform("qra_col", 0.5, 1.0),
+    "subsample": hp.uniform("qra_sub", 0.5, 1.0),
+    "reg_alpha": hp.loguniform("qra_ra", np.log(1e-4), np.log(10.0)),
+    "reg_lambda": hp.loguniform("qra_rl", np.log(1e-4), np.log(10.0)),
 }
 
 
@@ -334,12 +480,16 @@ if __name__ == "__main__":
         ckpt_cat = os.path.join(zone_trials_dir, "cat_trials.pkl")
         ckpt_rf = os.path.join(zone_trials_dir, "rf_trials.pkl")
         ckpt_dnn = os.path.join(zone_trials_dir, "dnn_trials.pkl")
+        ckpt_lear = os.path.join(zone_trials_dir, "lear_trials.pkl")
+        ckpt_qra = os.path.join(zone_trials_dir, "qra_trials.pkl")
 
         trials_lgb = _load_trials(ckpt_lgb)
         trials_xgb = _load_trials(ckpt_xgb)
         trials_cat = _load_trials(ckpt_cat)
         trials_rf = _load_trials(ckpt_rf)
         trials_dnn = _load_trials(ckpt_dnn)
+        trials_lear = _load_trials(ckpt_lear)
+        trials_qra = _load_trials(ckpt_qra)
 
         _D.update(
             {
@@ -364,19 +514,58 @@ if __name__ == "__main__":
                 "ckpt_rf": ckpt_rf,
                 "trials_dnn": trials_dnn,
                 "ckpt_dnn": ckpt_dnn,
+                "trials_lear": trials_lear,
+                "ckpt_lear": ckpt_lear,
+                "trials_qra": trials_qra,
+                "ckpt_qra": ckpt_qra,
             }
         )
+
+        # -------------------------------------------------------------------
+        # 2.5 Load Prediction Lake features for QRA optimization
+        # -------------------------------------------------------------------
+        qra_ready = False
+        try:
+            val_pred_dir = Path("data/outputs/predictions/val")
+            pred_val_all = _load_prediction_matrix_zone(val_pred_dir, zone)
+
+            common_val_idx = pred_val_all.index.intersection(y_va.index)
+            X_qra_va = pred_val_all.loc[common_val_idx].sort_index()
+            y_va_aligned = y_va.loc[X_qra_va.index]
+            val_mask = ~X_qra_va.isna().any(axis=1)
+            X_qra_va = X_qra_va.loc[val_mask]
+            y_va_aligned = y_va_aligned.loc[val_mask]
+
+            if X_qra_va.empty:
+                raise ValueError(
+                    "No aligned validation prediction rows available for QRA."
+                )
+
+            _D["X_qra_va"] = X_qra_va
+            _D["y_va_aligned"] = y_va_aligned
+            qra_ready = True
+        except (FileNotFoundError, ValueError):
+            qra_ready = False
+            logger.warning(
+                f"Prediction lake missing for {zone}. Skipping QRA optimization."
+            )
 
         # -------------------------------------------------------------------
         # 3. Run optimizations — each model picks up from zone checkpoint
         # -------------------------------------------------------------------
         models_config = [
+            ("LEAR", objective_lear, SPACE_LEAR, trials_lear, ckpt_lear),
             ("LightGBM", objective_lgb, SPACE_LGB, trials_lgb, ckpt_lgb),
             ("XGBoost", objective_xgb, SPACE_XGB, trials_xgb, ckpt_xgb),
             ("CatBoost", objective_cat, SPACE_CAT, trials_cat, ckpt_cat),
             ("RandomForest", objective_rf, SPACE_RF, trials_rf, ckpt_rf),
             ("PyTorch DNN", objective_dnn, SPACE_DNN, trials_dnn, ckpt_dnn),
         ]
+
+        if qra_ready:
+            models_config.append(
+                ("QRA", objective_qra, SPACE_QRA, trials_qra, ckpt_qra)
+            )
 
         best_params = {}
         for name, obj_fn, space, trials, ckpt in models_config:

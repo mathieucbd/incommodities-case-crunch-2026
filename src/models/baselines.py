@@ -3,7 +3,7 @@ import yaml
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from sklearn.linear_model import LassoLarsIC
+from sklearn.linear_model import LassoLarsIC, Lasso
 import sys
 
 # Ensure src is in standard path for execution
@@ -34,6 +34,7 @@ def predict_lear(
     y_full: pd.Series,
     test_indices: pd.DatetimeIndex,
     calibration_window_days: int,
+    alpha: float | None = None,
 ) -> pd.Series:
     """
     Trains 24 independent hourly LassoLarsIC models evaluating a daily moving calibration window.
@@ -79,8 +80,12 @@ def predict_lear(
 
             X_test_h = X_test_day.loc[hour_mask_test]
 
-            # 3. Instantiate, Fit, and Predict isolated LassoLarsIC
-            model = LassoLarsIC(criterion="aic")
+            # 3. Instantiate, Fit, and Predict isolated LEAR hourly model
+            model = (
+                LassoLarsIC(criterion="aic")
+                if alpha is None
+                else Lasso(alpha=alpha, max_iter=10000, random_state=42)
+            )
             try:
                 model.fit(X_calib_h, y_calib_h)
                 preds = model.predict(X_test_h)
@@ -102,11 +107,20 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
 
     raw_directory = config.get("data", {}).get("raw_dir", "data/raw/auhack_legacy/")
-    calibration_window = (
+    base_calibration_window = (
         config.get("model_settings", {})
         .get("lear", {})
         .get("calibration_window_days", 182)
     )
+    base_lear_alpha = (
+        config.get("model_settings", {}).get("lear", {}).get("alpha", None)
+    )
+
+    try:
+        with open("best_hyperparameters.yaml", "r") as f:
+            best_hyperparams = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        best_hyperparams = {}
 
     val_pred_dir = Path("data/outputs/predictions/val")
     test_pred_dir = Path("data/outputs/predictions/test")
@@ -124,6 +138,13 @@ if __name__ == "__main__":
 
     for target_zone in target_zones:
         logger.info(f"Establishing Baselines natively for {target_zone}...")
+
+        lear_params_zone = best_hyperparams.get("LEAR", {}).get(target_zone, {})
+        calibration_window = int(
+            lear_params_zone.get("calibration_window", base_calibration_window)
+        )
+        alpha_val = lear_params_zone.get("alpha", base_lear_alpha)
+        alpha_zone = float(alpha_val) if alpha_val is not None else None
 
         df = load_and_merge_zone(target_zone, raw_directory)
 
@@ -176,13 +197,21 @@ if __name__ == "__main__":
         test_preds_naive = predict_naive(y_full, test_idx, lag_hours=168)
 
         logger.info(
-            f"Establishing LEAR pseudo-online calibrations mapping {calibration_window} days..."
+            f"Establishing LEAR pseudo-online calibrations mapping {calibration_window} days (alpha={alpha_zone})..."
         )
         val_preds_lear = predict_lear(
-            X_full, y_full, val_idx, calibration_window_days=calibration_window
+            X_full,
+            y_full,
+            val_idx,
+            calibration_window_days=calibration_window,
+            alpha=alpha_zone,
         )
         test_preds_lear = predict_lear(
-            X_full, y_full, test_idx, calibration_window_days=calibration_window
+            X_full,
+            y_full,
+            test_idx,
+            calibration_window_days=calibration_window,
+            alpha=alpha_zone,
         )
 
         logger.info("========================================")

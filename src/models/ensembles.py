@@ -65,9 +65,19 @@ def run_ensemble():
     with open("config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
+    try:
+        with open("best_hyperparameters.yaml", "r") as f:
+            best_hyperparams = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        best_hyperparams = {}
+
     raw_directory = config.get("data", {}).get("raw_dir", "data/raw/auhack_legacy/")
     qra_config = config.get("model_settings", {}).get("qra", {})
     quantiles = qra_config.get("quantiles", [0.05, 0.5, 0.95])
+    config_qra_params = qra_config.copy()
+    config_qra_params.pop("quantiles", None)
+    config_qra_params.pop("alpha_winkler", None)
+    global_seed = config.get("pipeline", {}).get("global_seed", 42)
     target_zones = config.get("data", {}).get("target_zones", ["DE"])
 
     val_pred_dir = Path("data/outputs/predictions/val")
@@ -176,15 +186,17 @@ def run_ensemble():
         logger.info(f"Loaded models into QRA: {', '.join(common_models)}")
 
         # 2. Train QRA
-        qra_params = qra_config.copy()
-        qra_params.pop("quantiles", None)
-        qra_params.pop("alpha_winkler", None)
-        qra_params["random_state"] = config.get("pipeline", {}).get("global_seed", 42)
+        qra_params_zone = (
+            best_hyperparams.get("QRA", {}).get(target_zone, config_qra_params)
+            or config_qra_params
+        ).copy()
+        qra_params_zone["quantiles"] = quantiles
+        qra_params_zone["random_state"] = global_seed
         q_models = train_qra(
             y_val_aligned,
             X_qra_val.to_dict(orient="series"),
-            quantiles=quantiles,
-            params=qra_params,
+            quantiles=qra_params_zone["quantiles"],
+            params=qra_params_zone,
         )
 
         # 3. Generate Quantile Predictions on Test Set
