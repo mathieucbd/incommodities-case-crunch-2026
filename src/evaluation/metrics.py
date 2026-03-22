@@ -2,8 +2,12 @@
 Metric functions used across deterministic model evaluation.
 """
 
+import csv
 import numpy as np
 import pandas as pd
+from datetime import datetime
+from pathlib import Path
+from typing import Mapping, SupportsFloat
 
 
 def _process_inputs_for_metrics(p_real, p_pred):
@@ -96,3 +100,32 @@ def rMAE(p_real, p_pred, m=None, freq="1h"):
 
     p_real, p_pred = _process_inputs_for_metrics(p_real, p_pred)
     return np.mean(np.abs(p_real - p_pred) / mae_naive_train)
+
+
+def save_metrics_to_csv(
+    zone: str,
+    model_name: str,
+    metrics_dict: Mapping[str, SupportsFloat],
+    output_dir: str = "data/outputs/evaluation",
+) -> None:
+    """Append metrics to a centralized CSV log file.
+
+    Each metric is written as one row:
+    Timestamp, Zone, Model, Metric, Value
+    """
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    metrics_path = out_dir / "metrics.csv"
+    file_exists = metrics_path.exists()
+
+    with metrics_path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["Timestamp", "Zone", "Model", "Metric", "Value"])
+
+        timestamp = datetime.now().isoformat(timespec="seconds")
+        for metric_name, metric_value in metrics_dict.items():
+            writer.writerow(
+                [timestamp, zone, model_name, metric_name, float(metric_value)]
+            )

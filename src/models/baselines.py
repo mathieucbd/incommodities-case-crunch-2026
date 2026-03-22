@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning)
 from src.data_ingestion import load_and_merge_zone
 from src.features import build_features
 from src.preprocessing import chronological_train_val_test_split, scale_data
-from src.evaluation.metrics import MAE, sMAPE, rMAE
+from src.evaluation.metrics import MAE, sMAPE, rMAE, save_metrics_to_csv
 from src.constants import TARGET_COL
 
 logger = logging.getLogger(__name__)
@@ -228,6 +228,15 @@ if __name__ == "__main__":
         logger.info(f"  MAE:   {mae_naive:.3f} EUR/MWh")
         logger.info(f"  sMAPE: {smape_naive:.3f} %")
         logger.info(f"  rMAE:  {rmae_naive:.3f}")
+        save_metrics_to_csv(
+            zone=target_zone,
+            model_name="Naive 168h",
+            metrics_dict={
+                "MAE": mae_naive,
+                "sMAPE": smape_naive,
+                "rMAE": rmae_naive,
+            },
+        )
         zone_mae_naive[target_zone] = mae_naive
 
         # Store predictions for this zone
@@ -248,6 +257,11 @@ if __name__ == "__main__":
         logger.info(f"  MAE:   {mae_lear:.3f} EUR/MWh")
         logger.info(f"  sMAPE: {smape_lear:.3f} %")
         logger.info(f"  rMAE:  {rmae_lear:.3f}")
+        save_metrics_to_csv(
+            zone=target_zone,
+            model_name="LEAR",
+            metrics_dict={"MAE": mae_lear, "sMAPE": smape_lear, "rMAE": rmae_lear},
+        )
         zone_mae_lear[target_zone] = mae_lear
 
         # Store predictions for this zone

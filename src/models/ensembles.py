@@ -18,7 +18,7 @@ from src.constants import TARGET_COL
 
 # Evaluation
 from src.evaluation.probabilistic import pinball_loss, winkler_score
-from src.evaluation.metrics import MAE
+from src.evaluation.metrics import MAE, save_metrics_to_csv
 
 logger = logging.getLogger(__name__)
 
@@ -244,10 +244,13 @@ def run_ensemble():
         logger.info(f"QRA Median (0.50) MAE: {mae_05:.3f} EUR/MWh")
         zone_mae_qra[target_zone] = mae_05
 
+        metrics_to_save = {"MAE": mae_05}
+
         # Pinball Loss
         for q in quantiles:
             pl = pinball_loss(y_test_aligned, q_results[q], q)
             logger.info(f"Pinball Loss (q={q}): {pl:.3f}")
+            metrics_to_save[f"Pinball Loss q={q}"] = pl
 
         # Winkler Score (0.05 to 0.95 interval)
         if 0.05 in q_results and 0.95 in q_results:
@@ -256,6 +259,13 @@ def run_ensemble():
             )
             logger.info(f"Winkler Score (90% interval): {ws:.3f}")
             zone_winkler_qra[target_zone] = ws
+            metrics_to_save["Winkler Score (90% interval)"] = ws
+
+        save_metrics_to_csv(
+            zone=target_zone,
+            model_name="QRA",
+            metrics_dict=metrics_to_save,
+        )
 
         logger.info("========================================")
 

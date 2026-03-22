@@ -11,7 +11,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.data_ingestion import load_and_merge_zone
 from src.features import build_features
 from src.preprocessing import chronological_train_val_test_split
-from src.evaluation.metrics import MAE, sMAPE, rMAE
+from src.evaluation.metrics import MAE, sMAPE, rMAE, save_metrics_to_csv
 from src.constants import TARGET_COL
 
 import lightgbm as lgb
@@ -121,7 +121,7 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, params: dict 
 
 
 def evaluate_model(
-    model_name: str, model, X_test: pd.DataFrame, y_test: pd.Series
+    zone: str, model_name: str, model, X_test: pd.DataFrame, y_test: pd.Series
 ) -> pd.Series:
     """Orchestrates test generation and routes metrics mapping identically to terminal validation outputs."""
     logger.info(f"--- Evaluating {model_name} ---")
@@ -140,6 +140,12 @@ def evaluate_model(
     logger.info(f"[{model_name}] MAE:   {mae_score:.3f} EUR/MWh")
     logger.info(f"[{model_name}] sMAPE: {smape_score:.3f} %")
     logger.info(f"[{model_name}] rMAE:  {rmae_score:.3f}")
+
+    save_metrics_to_csv(
+        zone=zone,
+        model_name=model_name,
+        metrics_dict={"MAE": mae_score, "sMAPE": smape_score, "rMAE": rmae_score},
+    )
 
     return preds
 
@@ -242,7 +248,7 @@ if __name__ == "__main__":
         lgb_model = train_lightgbm(X_train, y_train, X_val, y_val, lgb_params_zone)
         val_preds_lgbm = pd.Series(lgb_model.predict(X_val), index=X_val.index)
         test_preds_lgbm = evaluate_model(
-            f"LightGBM - {target_zone}", lgb_model, X_test, y_test
+            target_zone, "LightGBM", lgb_model, X_test, y_test
         )
         val_preds_dict_lgbm[target_zone] = val_preds_lgbm
         test_preds_dict_lgbm[target_zone] = test_preds_lgbm
@@ -259,7 +265,7 @@ if __name__ == "__main__":
         xgb_model = train_xgboost(X_train, y_train, X_val, y_val, xgb_params_zone)
         val_preds_xgb = pd.Series(xgb_model.predict(X_val), index=X_val.index)
         test_preds_xgb = evaluate_model(
-            f"XGBoost - {target_zone}", xgb_model, X_test, y_test
+            target_zone, "XGBoost", xgb_model, X_test, y_test
         )
         val_preds_dict_xgb[target_zone] = val_preds_xgb
         test_preds_dict_xgb[target_zone] = test_preds_xgb
@@ -278,7 +284,7 @@ if __name__ == "__main__":
         )
         val_preds_cat = pd.Series(cat_model.predict(X_val), index=X_val.index)
         test_preds_cat = evaluate_model(
-            f"CatBoost - {target_zone}", cat_model, X_test, y_test
+            target_zone, "CatBoost", cat_model, X_test, y_test
         )
         val_preds_dict_cat[target_zone] = val_preds_cat
         test_preds_dict_cat[target_zone] = test_preds_cat
@@ -294,7 +300,7 @@ if __name__ == "__main__":
         rf_model = train_random_forest(X_train, y_train, rf_params_zone)
         val_preds_rf = pd.Series(rf_model.predict(X_val), index=X_val.index)
         test_preds_rf = evaluate_model(
-            f"RandomForest - {target_zone}", rf_model, X_test, y_test
+            target_zone, "RandomForest", rf_model, X_test, y_test
         )
         val_preds_dict_rf[target_zone] = val_preds_rf
         test_preds_dict_rf[target_zone] = test_preds_rf

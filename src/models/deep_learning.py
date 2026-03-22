@@ -17,7 +17,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from src.data_ingestion import load_and_merge_zone
 from src.features import build_features
 from src.preprocessing import chronological_train_val_test_split, scale_data
-from src.evaluation.metrics import MAE, sMAPE, rMAE
+from src.evaluation.metrics import MAE, sMAPE, rMAE, save_metrics_to_csv
 from src.constants import TARGET_COL
 
 logger = logging.getLogger(__name__)
@@ -214,6 +214,8 @@ def evaluate_dnn(
     y_test_daily: np.ndarray,
     y_scaler,
     y_test_raw: pd.Series,
+    zone: str,
+    split_name: str = "Test",
 ):
     """
     Maps 24D Test Tensors locally formatting arrays back to standard Flat sequences evaluating targets.
@@ -252,6 +254,12 @@ def evaluate_dnn(
     logger.info(f"[Multivariate PyTorch DNN] MAE:   {mae_score:.3f} EUR/MWh")
     logger.info(f"[Multivariate PyTorch DNN] sMAPE: {smape_score:.3f} %")
     logger.info(f"[Multivariate PyTorch DNN] rMAE:  {rmae_score:.3f}")
+
+    save_metrics_to_csv(
+        zone=zone,
+        model_name=f"PyTorch DNN ({split_name})",
+        metrics_dict={"MAE": mae_score, "sMAPE": smape_score, "rMAE": rmae_score},
+    )
 
     return y_p_s
 
@@ -370,10 +378,24 @@ if __name__ == "__main__":
         )
 
         val_preds_dnn = evaluate_dnn(
-            model, device, X_val_d, y_val_d, y_scaler, y_val_raw
+            model,
+            device,
+            X_val_d,
+            y_val_d,
+            y_scaler,
+            y_val_raw,
+            zone=target_zone,
+            split_name="Validation",
         )
         test_preds_dnn = evaluate_dnn(
-            model, device, X_test_d, y_test_d, y_scaler, y_test_raw
+            model,
+            device,
+            X_test_d,
+            y_test_d,
+            y_scaler,
+            y_test_raw,
+            zone=target_zone,
+            split_name="Test",
         )
 
         val_preds_dict_dnn[target_zone] = val_preds_dnn
