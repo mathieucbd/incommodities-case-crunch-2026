@@ -10,7 +10,7 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from src.data_ingestion import load_and_merge_zone
-from src.features import create_lags, add_deterministic_features, apply_mad_filter
+from src.features import build_features
 from src.preprocessing import chronological_train_val_test_split, scale_data
 from src.evaluation.metrics import MAE, sMAPE, rMAE
 from src.constants import TARGET_COL
@@ -128,6 +128,16 @@ if __name__ == "__main__":
     test_pred_dir.mkdir(parents=True, exist_ok=True)
 
     target_zones = config.get("data", {}).get("target_zones", ["DE"])
+    flow_only_zones = config["data"].get("flow_only_zones", [])
+    all_zones = target_zones + flow_only_zones
+    raw_data_dict = {z: load_and_merge_zone(z, raw_directory) for z in all_zones}
+
+    missing_targets = [z for z in target_zones if z not in raw_data_dict]
+    if missing_targets:
+        raise ValueError(
+            f"Missing required target zones in preloaded raw_data_dict: {missing_targets}"
+        )
+
     val_preds_dict_naive = {}
     val_preds_dict_lear = {}
     test_preds_dict_naive = {}
@@ -146,25 +156,9 @@ if __name__ == "__main__":
         alpha_val = lear_params_zone.get("alpha", base_lear_alpha)
         alpha_zone = float(alpha_val) if alpha_val is not None else None
 
-        df = load_and_merge_zone(target_zone, raw_directory)
-
-        # Rapid feature application mimicking our execution loop
-        df["Spot_Price_Filtered"] = apply_mad_filter(
-            df[TARGET_COL], window="24h", z=3.0
+        df, active_features = build_features(
+            raw_data_dict, target_zone, lag_actual_flows=True
         )
-        df = add_deterministic_features(df)
-
-        lag_targets = ["Spot_Price_Filtered", "Residual_Load"]
-        lags_list = [24, 48, 168]
-        df = create_lags(df, lag_targets, lags_list)
-
-        # Filter bounds specifically targeting the requested columns
-        active_features = ["Hour", "DayOfWeek", "Month"]
-        for col in lag_targets:
-            for lag in lags_list:
-                active_features.append(f"{col}_lag_{lag}")
-
-        df = df.dropna(subset=active_features + [TARGET_COL])
 
         logger.info("Executing Train / Val / Test exact chronological splits...")
         train_df, val_df, test_df = chronological_train_val_test_split(

@@ -2,6 +2,7 @@ data:
   raw_dir: "data/raw/auhack_legacy/"
   output_dir: "data/outputs/"
   target_zones: ["AT", "BE", "CH", "CZ", "DE", "DK1", "FR", "NL", "PL"]
+  flow_only_zones: ["DK2", "NO2", "SE4"]
 
 pipeline:
   global_seed: 42
@@ -30,7 +31,3 @@ model_settings:
     learning_rate: 0.05
     num_leaves: 31
     min_child_samples: 20
-
-# Trading / Dispatch settings
-greedy_algorithm:
-  zones: ["AT", "BE", "CH", "CZ", "DE", "DK1", "DK2", "FR", "NL", "NO2", "PL", "SE4"]

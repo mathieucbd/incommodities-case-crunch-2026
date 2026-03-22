@@ -21,7 +21,7 @@ from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
 from lightgbm import LGBMRegressor
 
 from src.data_ingestion import load_and_merge_zone
-from src.features import create_lags, add_deterministic_features, apply_mad_filter
+from src.features import build_features
 from src.preprocessing import chronological_train_val_test_split, scale_data
 from src.constants import TARGET_COL
 from src.evaluation.metrics import MAE
@@ -405,6 +405,16 @@ if __name__ == "__main__":
 
     raw_dir = config["data"]["raw_dir"]
     target_zones = config["data"]["target_zones"]
+    flow_only_zones = config["data"].get("flow_only_zones", [])
+    all_zones = target_zones + flow_only_zones
+    raw_data_dict = {z: load_and_merge_zone(z, raw_dir) for z in all_zones}
+
+    missing_targets = [z for z in target_zones if z not in raw_data_dict]
+    if missing_targets:
+        raise ValueError(
+            f"Missing required target zones in preloaded raw_data_dict: {missing_targets}"
+        )
+
     seed = config.get("pipeline", {}).get("global_seed", 42)
     trials_dir = (
         config.get("model_settings", {})
@@ -431,33 +441,20 @@ if __name__ == "__main__":
             f"Loading data (zone={zone}, seed={seed}, max_evals={max_evals})..."
         )
 
-        df = load_and_merge_zone(zone, raw_dir)
-        df["Spot_Price_Filtered"] = apply_mad_filter(
-            df[TARGET_COL], window="24h", z=3.0
-        )
-        df = add_deterministic_features(df)
-
-        lag_cols = ["Spot_Price_Filtered", "Residual_Load"]
-        lags_list = [24, 48, 168]
-        df = create_lags(df, lag_cols, lags_list)
-
-        features = ["Hour", "DayOfWeek", "Month"] + [
-            f"{c}_lag_{l}" for c in lag_cols for l in lags_list
-        ]
-        df = df.dropna(subset=features + [TARGET_COL])
+        df, active_features = build_features(raw_data_dict, zone, lag_actual_flows=True)
 
         train_df, val_df, test_df = chronological_train_val_test_split(
             df, val_ratio=0.15, test_ratio=0.15
         )
 
         # Raw (for trees)
-        X_tr = train_df[features]
+        X_tr = train_df[active_features]
         y_tr = train_df[TARGET_COL]
-        X_va = val_df[features]
+        X_va = val_df[active_features]
         y_va = val_df[TARGET_COL]
 
         # Scaled (for DNN)
-        X_tr_s, X_va_s, _, _ = scale_data(X_tr, X_va, test_df[features])
+        X_tr_s, X_va_s, _, _ = scale_data(X_tr, X_va, test_df[active_features])
         y_tr_s_df, y_va_s_df, _, y_scaler = scale_data(
             y_tr.to_frame(), y_va.to_frame(), test_df[[TARGET_COL]]
         )
