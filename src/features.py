@@ -176,6 +176,10 @@ def build_features(
             df_final.drop(columns=flow_cols, inplace=True)
     # -----------------------------------------
 
+    # 5) Clean out the initial lag-induced NaNs mechanically created by shift(168)
+    # This securely drops the very first 7 days (168 hours) of the dataset ensuring clean windows
+    df_final = df_final.dropna()
+
     # 6) Dynamic output
     active_features = [col for col in df_final.columns if col != TARGET_COL]
 
