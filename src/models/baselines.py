@@ -86,8 +86,9 @@ def predict_lear(
             X_test_h = X_test_day.loc[hour_mask_test]
 
             # 3. Instantiate, Fit, and Predict isolated LEAR hourly model
+            noise_var = float(np.var(y_calib_h)) if len(y_calib_h) <= X_calib_h.shape[1] else None
             model = (
-                LassoLarsIC(criterion="aic", max_iter=10000)
+                LassoLarsIC(criterion="aic", max_iter=10000, noise_variance=noise_var)
                 if alpha is None
                 else Lasso(alpha=alpha, max_iter=10000, tol=1e-3, random_state=42)
             )

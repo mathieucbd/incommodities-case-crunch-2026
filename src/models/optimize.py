@@ -15,7 +15,7 @@ import sys
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 import torch
-from sklearn.linear_model import Lasso
+from sklearn.linear_model import LassoLarsIC
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -233,7 +233,6 @@ def _predict_lear_with_alpha(
     y_full: pd.Series,
     test_indices: pd.DatetimeIndex,
     calibration_window_days: int,
-    alpha: float,
 ) -> pd.Series:
     """Equivalent LEAR-like hourly rolling calibration using Lasso(alpha)."""
     unique_test_days = np.unique(test_indices.date)
@@ -267,7 +266,8 @@ def _predict_lear_with_alpha(
 
             X_test_h = X_test_day.loc[hour_mask_test]
 
-            model = Lasso(alpha=alpha, max_iter=10000, random_state=_D["seed"])
+            noise_var = float(np.var(y_calib_h)) if len(y_calib_h) <= X_calib_h.shape[1] else None
+            model = LassoLarsIC(criterion='bic', max_iter=1000, noise_variance=noise_var)
             try:
                 model.fit(X_calib_h, y_calib_h)
                 preds = model.predict(X_test_h)
@@ -280,7 +280,6 @@ def _predict_lear_with_alpha(
 
 def objective_lear(params):
     calibration_window = int(params["calibration_window"])
-    alpha = float(params["alpha"])
 
     X_full = pd.concat([_D["X_tr"], _D["X_va"]]).sort_index()
     y_full = pd.concat([_D["y_tr"], _D["y_va"]]).sort_index()
@@ -293,7 +292,6 @@ def objective_lear(params):
             y_full,
             val_idx,
             calibration_window_days=calibration_window,
-            alpha=alpha,
         )
     except TypeError:
         # Fallback equivalent LEAR implementation with tunable alpha.
@@ -302,7 +300,6 @@ def objective_lear(params):
             y_full,
             val_idx,
             calibration_window_days=calibration_window,
-            alpha=alpha,
         )
 
     valid_mask = ~val_preds.isna()
@@ -382,8 +379,7 @@ SPACE_DNN = {
 }
 
 SPACE_LEAR = {
-    "calibration_window": hp.choice("lear_cw", [56, 182, 364]),
-    "alpha": hp.choice("lear_alpha", [0.1]), # Fixed regularization to isolate window testing
+    "calibration_window": hp.choice("lear_cw", [56]),
 }
 
 SPACE_QRA = {
@@ -608,15 +604,11 @@ if __name__ == "__main__":
         for name, obj_fn, space, trials, ckpt in models_config:
             # Asymmetric Tuning Budget
             if name == "LEAR":
-                current_max_evals = 3  # STRICT CAP: Test min, mid, and max windows
-            elif name in ["RandomForest", "CatBoost"]:
-                current_max_evals = min(
-                    30, max_evals
-                )  # Moderate budget for slower trees
+                current_max_evals = 1
+            elif name in ["CatBoost", "RandomForest", "PyTorch DNN"]:
+                current_max_evals = min(10, max_evals)
             else:
-                current_max_evals = (
-                    max_evals  # Full budget for LightGBM, XGBoost, PyTorch DNN, QRA
-                )
+                current_max_evals = min(15, max_evals)
 
             already_done = len(trials.trials)
             remaining = max(0, current_max_evals - already_done)
@@ -639,7 +631,11 @@ if __name__ == "__main__":
                     f"[{zone}] {name} already fully optimized (checkpoint intact)."
                 )
 
-            best_params[name] = space_eval(space, trials.argmin)
+            raw_best = space_eval(space, trials.argmin)
+            best_params[name] = {
+                k: round(v, 4) if isinstance(v, float) else v 
+                for k, v in raw_best.items()
+            }
             logger.info(f"[{zone}] [BEST] {name}: {best_params[name]}")
 
         all_best_params[zone] = best_params
