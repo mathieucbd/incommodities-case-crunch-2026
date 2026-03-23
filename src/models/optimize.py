@@ -382,8 +382,8 @@ SPACE_DNN = {
 }
 
 SPACE_LEAR = {
-    "calibration_window": hp.choice("lear_cw", [56, 84, 112, 182, 364]),
-    "alpha": hp.loguniform("lear_alpha", np.log(1e-4), np.log(10.0)),
+    "calibration_window": hp.choice("lear_cw", [56, 182, 364]),
+    "alpha": hp.choice("lear_alpha", [0.1]), # Fixed regularization to isolate window testing
 }
 
 SPACE_QRA = {
@@ -608,7 +608,7 @@ if __name__ == "__main__":
         for name, obj_fn, space, trials, ckpt in models_config:
             # Asymmetric Tuning Budget
             if name == "LEAR":
-                current_max_evals = min(15, max_evals)  # Cap LEAR at 15 trials
+                current_max_evals = 3  # STRICT CAP: Test min, mid, and max windows
             elif name in ["RandomForest", "CatBoost"]:
                 current_max_evals = min(
                     30, max_evals
