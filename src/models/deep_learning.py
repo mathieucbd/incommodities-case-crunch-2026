@@ -170,6 +170,9 @@ def train_pytorch_dnn(
             outputs = model(batch_x)
             loss = criterion(outputs, batch_y)
             loss.backward()
+            # --- PREVENT EXPLODING GRADIENTS ---
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            # -----------------------------------
             optimizer.step()
 
             train_loss += loss.item() * batch_x.size(0)

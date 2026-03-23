@@ -221,6 +221,10 @@ def objective_dnn(params):
 
     val_mae = MAE(y_va_raw.loc[valid_idx], pd.Series(preds_unscaled, index=valid_idx))
     _save_trials(_D["trials_dnn"], _D["ckpt_dnn"])
+
+    if np.isnan(val_mae) or np.isinf(val_mae):
+        return {'loss': 99999.0, 'status': STATUS_OK}
+
     return {"loss": val_mae, "status": STATUS_OK}
 
 
@@ -364,8 +368,8 @@ SPACE_CAT = {
 }
 
 SPACE_RF = {
-    "n_estimators": hp.choice("rf_n_est", [300, 500, 1000]),
-    "max_depth": hp.quniform("rf_depth", 10, 50, 1),
+    "n_estimators": hp.choice("rf_n_est", [100, 200, 300]),
+    "max_depth": hp.quniform("rf_depth", 10, 30, 1),
     "min_samples_split": hp.quniform("rf_mss", 2, 20, 1),
     "min_samples_leaf": hp.quniform("rf_msl", 1, 10, 1),
 }
@@ -458,16 +462,47 @@ if __name__ == "__main__":
         X_va = val_df[active_features]
         y_va = val_df[TARGET_COL]
 
-        # Scaled (for DNN)
-        X_tr_s, X_va_s, _, _ = scale_data(X_tr, X_va, test_df[active_features])
+        # --- HYBRID SEASONAL IMPUTATION (CAUSAL) ---
+        # 1. Try same hour yesterday (t-24)
+        # 2. Fallback to last known hour (t-1)
+        # 3. Fallback to next known hour ONLY for row 0 edge-cases
+        X_tr_clean = X_tr.fillna(X_tr.shift(24)).ffill().bfill()
+        X_va_clean = X_va.fillna(X_va.shift(24)).ffill().bfill()
+        test_df_clean = test_df[active_features].fillna(test_df[active_features].shift(24)).ffill().bfill()
+        # -------------------------------------------
+
+        # --- DNN FEATURE SELECTION (Reduce Noise) ---
+        from sklearn.feature_selection import SelectFromModel
+        from lightgbm import LGBMRegressor
+
+        # Train a quick tree to find the 40 most important features
+        selector = SelectFromModel(
+            LGBMRegressor(n_estimators=50, random_state=seed, n_jobs=-1), 
+            max_features=40, 
+            threshold=-np.inf, # Force it to strictly take the top 40
+            prefit=False
+        )
+        
+        # Fit on train, transform train, val, and test
+        X_tr_dnn_clean = pd.DataFrame(selector.fit_transform(X_tr_clean, y_tr), index=X_tr_clean.index)
+        X_va_dnn_clean = pd.DataFrame(selector.transform(X_va_clean), index=X_va_clean.index)
+        test_df_dnn_clean = pd.DataFrame(selector.transform(test_df_clean), index=test_df_clean.index)
+        # --------------------------------------------
+
+        # Scaled (for DNN) - Pass the cleanly filtered matrices!
+        X_tr_s, X_va_s, _, _ = scale_data(X_tr_dnn_clean, X_va_dnn_clean, test_df_dnn_clean)
         y_tr_s_df, y_va_s_df, _, y_scaler = scale_data(
             y_tr.to_frame(), y_va.to_frame(), test_df[[TARGET_COL]]
         )
         y_tr_s = y_tr_s_df[TARGET_COL]
         y_va_s = y_va_s_df[TARGET_COL]
 
-        X_tr_d, y_tr_d = reshape_to_daily(X_tr_s, y_tr_s, augment=aug)
-        X_va_d, y_va_d = reshape_to_daily(X_va_s, y_va_s, augment=False)
+        X_tr_d, y_tr_d_raw = reshape_to_daily(X_tr_s, y_tr_s, augment=aug)
+        X_va_d, y_va_d_raw = reshape_to_daily(X_va_s, y_va_s, augment=False)
+
+        # Sanitize targets once per zone rather than per-trial inside objective_dnn
+        y_tr_d = np.nan_to_num(y_tr_d_raw, nan=np.nanmean(y_tr_d_raw)).astype(np.float32)
+        y_va_d = np.nan_to_num(y_va_d_raw, nan=np.nanmean(y_va_d_raw)).astype(np.float32)
 
         logger.info(f"Train DNN tensors ({zone}): {X_tr_d.shape}  Val: {X_va_d.shape}")
 

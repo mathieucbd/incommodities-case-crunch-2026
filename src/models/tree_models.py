@@ -86,6 +86,8 @@ def train_xgboost(
         # But we ensure we protect against dual declarations
         pass
 
+    params.setdefault("tree_method", "hist")
+
     model = xgb.XGBRegressor(**params)
     model.fit(X_train, y_train, eval_set=[(X_val, y_val)], **fit_params)
     return model
@@ -104,6 +106,7 @@ def train_catboost(
         params = {}
 
     params["train_dir"] = f"data/outputs/catboost/{zone}"
+    params.setdefault("thread_count", -1)
 
     model = CatBoostRegressor(verbose=False, **params)
     model.fit(X_train, y_train, eval_set=(X_val, y_val))

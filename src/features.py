@@ -122,6 +122,11 @@ def build_features(
     if "Residual_Load" in df_final.columns:
         lag_base_cols.append("Residual_Load")
     df_final = add_lags(df_final, lag_base_cols, lags=[24, 48, 168])
+    
+    # --- DANGEROUS TARGET LEAK PREVENTED ---
+    # Drop the original t=0 columns so the model doesn't peek at today's answers!
+    df_final = df_final.drop(columns=lag_base_cols, errors="ignore")
+    # ---------------------------------------
 
     # 4) Neighbor-zone processing and join
     neighbor_lags = [24, 48, 168]
