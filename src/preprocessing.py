@@ -5,8 +5,8 @@ from sklearn.preprocessing import StandardScaler
 
 def chronological_train_val_test_split(
     df: pd.DataFrame, 
-    val_ratio: float = 0.15, 
-    test_ratio: float = 0.15
+    val_start: str, 
+    test_start: str
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Splits the dataframe strictly chronologically to prevent lookahead bias.
@@ -15,23 +15,18 @@ def chronological_train_val_test_split(
     -----------
     df : pd.DataFrame
         The full dataset sorted chronologically.
-    val_ratio : float
-        Proportion of the dataset to allocate to the validation set.
-    test_ratio : float
-        Proportion of the dataset to allocate to the test set.
+    val_start : str
+        Start date string extracted dynamically from config for validation boundary.
+    test_start : str
+        Start date string extracted dynamically from config for testing boundary.
         
     Returns:
     --------
     train_df, val_df, test_df : tuple of pd.DataFrames
     """
-    n = len(df)
-    test_size = int(n * test_ratio)
-    val_size = int(n * val_ratio)
-    train_size = n - val_size - test_size
-
-    train_df = df.iloc[:train_size].copy()
-    val_df = df.iloc[train_size:train_size + val_size].copy()
-    test_df = df.iloc[train_size + val_size:].copy()
+    train_df = df[df.index < val_start].copy()
+    val_df = df[(df.index >= val_start) & (df.index < test_start)].copy()
+    test_df = df[df.index >= test_start].copy()
 
     return train_df, val_df, test_df
 

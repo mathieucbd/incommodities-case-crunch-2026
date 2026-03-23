@@ -96,7 +96,7 @@ def run_ensemble():
     config_qra_params.pop("quantiles", None)
     config_qra_params.pop("alpha_winkler", None)
     global_seed = config.get("pipeline", {}).get("global_seed", 42)
-    target_zones = config.get("data", {}).get("target_zones", ["DE"])
+    target_zones = config.get("data", {}).get("target_zones", [])
 
     val_pred_dir = Path("data/outputs/predictions/val")
     test_pred_dir = Path("data/outputs/predictions/test")
@@ -131,7 +131,9 @@ def run_ensemble():
         df = df.dropna(subset=active_features + [TARGET_COL])
 
         _, val_df, test_df = chronological_train_val_test_split(
-            df, val_ratio=0.15, test_ratio=0.15
+            df, 
+            val_start=__import__("yaml").safe_load(open("config.yaml"))["data"]["val_start"], 
+            test_start=__import__("yaml").safe_load(open("config.yaml"))["data"]["test_start"]
         )
 
         y_val_raw = val_df[TARGET_COL]

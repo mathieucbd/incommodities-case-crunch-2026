@@ -1,8 +1,14 @@
 data:
-  raw_dir: "data/raw/auhack_legacy/"
-  output_dir: "data/outputs/"
-  target_zones: ["AT", "BE", "CH", "CZ", "DE", "DK1", "FR", "NL", "PL"]
-  flow_only_zones: ["DK2", "NO2", "SE4"]
+  raw_dir: "data/raw"
+  features_file: "x_train.csv"
+  targets_file: "y_train.csv"
+  test_features_file: "x_test.csv"
+  target_cols: ["fr_spot", "uk_spot"]
+  index_col: "datetime_CET"
+  splits:
+    train_start: "2022-07-01"
+    val_start: "2024-05-01"
+    test_start: "2024-07-01"
 
 pipeline:
   global_seed: 42
@@ -15,12 +21,13 @@ model_settings:
 
   # Baseline (LEAR) settings
   lear:
-    calibration_window_days: 182
+    calibration_window: 56
     
   # Deep Learning Structural Settings (Weights are now in artifact)
   dnn:
     use_data_augmentation: True
     validation_split: 0.2
+    top_k_features: 40
 
   # Ensemble (QRA) Settings
   qra:

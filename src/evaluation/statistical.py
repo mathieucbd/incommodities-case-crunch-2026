@@ -96,7 +96,9 @@ def _load_y_test_for_zone(target_zone: str, raw_dir: str) -> pd.Series:
 
     df = df.dropna(subset=active_features + [TARGET_COL])
     _, _, test_df = chronological_train_val_test_split(
-        df, val_ratio=0.15, test_ratio=0.15
+        df, 
+        val_start=__import__("yaml").safe_load(open("config.yaml"))["data"]["val_start"], 
+        test_start=__import__("yaml").safe_load(open("config.yaml"))["data"]["test_start"]
     )
     return test_df[TARGET_COL]
 
@@ -108,7 +110,7 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
 
     raw_dir = config.get("data", {}).get("raw_dir", "data/raw/auhack_legacy/")
-    target_zones = config.get("data", {}).get("target_zones", ["DE"])
+    target_zones = config.get("data", {}).get("target_zones", [])
 
     lear_df = pd.read_csv(
         "data/outputs/predictions/test/lear.csv", index_col=0, parse_dates=True

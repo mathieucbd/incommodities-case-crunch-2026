@@ -1,23 +1,8 @@
-"""
-Global constants and data schemas for the Day-Ahead Market (DAM) forecasting pipeline.
-"""
+import yaml
+from pathlib import Path
 
-# Market Zones
-ALL_ZONES = ["AT", "BE", "CH", "CZ", "DE", "DK1", "DK2", "FR", "NL", "NO2", "PL", "SE4"]
+config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+with open(config_path, "r") as f:
+    _config = yaml.safe_load(f)
 
-# Target Variable
-TARGET_COL = "Spot_Price"
-
-# ENTSO-E Generation Groupings (Merit Order Effect)
-RENEWABLE_COLS = ["SOLAR", "WIND-OFFSHORE", "WIND-ONSHORE"]
-BASELOAD_COLS = ["NUCLEAR", "HYDRO-ROR", "BIOMASS"]
-DISPATCHABLE_COLS = ["FOSSIL-GAS", "HARD-COAL", "LIGNITE"]
-
-# Expected Input File Suffixes
-FILE_SUFFIXES = {
-    "price": "-spot-price.csv",
-    "load": "-total-load.csv",
-    "generation": "-generation.csv",
-    "flows": "-physical-flows-in.csv",
-    "weather": "-open-meteo" # Note: Weather has coordinates in the name, needs partial matching
-}
+TARGET_COLS = _config.get("data", {}).get("target_cols", ["fr_spot", "uk_spot"])

@@ -293,7 +293,7 @@ if __name__ == "__main__":
             "best_hyperparameters.yaml not found; falling back to default config.yaml parameters."
         )
 
-    target_zones = config.get("data", {}).get("target_zones", ["DE"])
+    target_zones = config.get("data", {}).get("target_zones", [])
     flow_only_zones = config["data"].get("flow_only_zones", [])
     all_zones = target_zones + flow_only_zones
     raw_data_dict = {z: load_and_merge_zone(z, raw_directory) for z in all_zones}
@@ -322,7 +322,9 @@ if __name__ == "__main__":
             "Splitting & Applying StandardScaler mathematically locking zero node bias leakages..."
         )
         train_df, val_df, test_df = chronological_train_val_test_split(
-            df, val_ratio=val_split, test_ratio=0.15
+            df, 
+            val_start=__import__("yaml").safe_load(open("config.yaml"))["data"]["val_start"], 
+            test_start=__import__("yaml").safe_load(open("config.yaml"))["data"]["test_start"]
         )
 
         # 1. Standardizing features is CRITICAL strictly for gradients

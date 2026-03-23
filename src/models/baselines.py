@@ -133,7 +133,7 @@ if __name__ == "__main__":
     val_pred_dir.mkdir(parents=True, exist_ok=True)
     test_pred_dir.mkdir(parents=True, exist_ok=True)
 
-    target_zones = config.get("data", {}).get("target_zones", ["DE"])
+    target_zones = config.get("data", {}).get("target_zones", [])
     flow_only_zones = config["data"].get("flow_only_zones", [])
     all_zones = target_zones + flow_only_zones
     raw_data_dict = {z: load_and_merge_zone(z, raw_directory) for z in all_zones}
@@ -168,7 +168,7 @@ if __name__ == "__main__":
 
         logger.info("Executing Train / Val / Test exact chronological splits...")
         train_df, val_df, test_df = chronological_train_val_test_split(
-            df, val_ratio=0.15, test_ratio=0.15
+            df, val_start=config["data"]["val_start"], test_start=config["data"]["test_start"]
         )
 
         X_train = train_df[active_features]
