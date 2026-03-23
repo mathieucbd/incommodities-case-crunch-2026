@@ -5,6 +5,14 @@ data:
   test_features_file: "x_test.csv"
   target_cols: ["fr_spot", "uk_spot"]
   index_col: "datetime_CET"
+  sparse_daily_features: 
+    - "de_gas"
+    - "es_gas"
+    - "fr_gas"
+    - "nl_gas"
+    - "uk_gas"
+    - "eu_emission"
+    - "uk_emission"
   splits:
     train_start: "2022-07-01"
     val_start: "2024-05-01"
