@@ -188,7 +188,7 @@ if __name__ == "__main__":
             "best_hyperparameters.yaml not found; falling back to default config.yaml parameters."
         )
 
-    target_zones = config.get("data", {}).get("target_zones", ["DE"])
+    target_zones = config.get("data", {}).get("target_zones", [])
     flow_only_zones = config["data"].get("flow_only_zones", [])
     all_zones = target_zones + flow_only_zones
     raw_data_dict = {z: load_and_merge_zone(z, raw_directory) for z in all_zones}
@@ -224,7 +224,9 @@ if __name__ == "__main__":
         # 2. Chronological Subsets Extracting Scaling Limits
         # Trees operate utilizing relative branching nodes meaning variance Standardization is useless computational overhead.
         train_df, val_df, test_df = chronological_train_val_test_split(
-            df, val_ratio=0.15, test_ratio=0.15
+            df, 
+            val_start=__import__("yaml").safe_load(open("config.yaml"))["data"]["val_start"], 
+            test_start=__import__("yaml").safe_load(open("config.yaml"))["data"]["test_start"]
         )
 
         X_train = train_df[active_features]

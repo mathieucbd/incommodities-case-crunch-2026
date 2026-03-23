@@ -27,7 +27,7 @@ def generate_shap_analysis():
     raw_directory = config.get("data", {}).get("raw_dir", "data/raw/auhack_legacy/")
     outputs_dir = Path(config.get("data", {}).get("output_dir", "data/outputs/"))
     outputs_dir.mkdir(parents=True, exist_ok=True)
-    target_zones = config.get("data", {}).get("target_zones", ["DE"])
+    target_zones = config.get("data", {}).get("target_zones", [])
 
     explainability_root = outputs_dir / "explainability"
     explainability_root.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,9 @@ def generate_shap_analysis():
         df = df.dropna(subset=active_features + [TARGET_COL])
 
         train_df, val_df, test_df = chronological_train_val_test_split(
-            df, val_ratio=0.15, test_ratio=0.15
+            df, 
+            val_start=__import__("yaml").safe_load(open("config.yaml"))["data"]["val_start"], 
+            test_start=__import__("yaml").safe_load(open("config.yaml"))["data"]["test_start"]
         )
 
         X_train = train_df[active_features]

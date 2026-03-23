@@ -279,7 +279,7 @@ def _predict_lear_with_alpha(
 
 
 def objective_lear(params):
-    calibration_window = int(params["calibration_window"])
+    calibration_window = int(config.get("model_settings", {}).get("lear", {}).get("calibration_window", 56))
 
     X_full = pd.concat([_D["X_tr"], _D["X_va"]]).sort_index()
     y_full = pd.concat([_D["y_tr"], _D["y_va"]]).sort_index()
@@ -378,9 +378,7 @@ SPACE_DNN = {
     "batch_size": hp.choice("dnn_bs", [32, 64, 128]),
 }
 
-SPACE_LEAR = {
-    "calibration_window": hp.choice("lear_cw", [56]),
-}
+SPACE_LEAR = {}
 
 SPACE_QRA = {
     "n_estimators": hp.choice("qra_n_est", [500, 1000, 1500]),
@@ -449,7 +447,7 @@ if __name__ == "__main__":
         df, active_features = build_features(raw_data_dict, zone, lag_actual_flows=True)
 
         train_df, val_df, test_df = chronological_train_val_test_split(
-            df, val_ratio=0.15, test_ratio=0.15
+            df, val_start=config["data"]["val_start"], test_start=config["data"]["test_start"]
         )
 
         # Raw (for trees)
@@ -471,11 +469,12 @@ if __name__ == "__main__":
         from sklearn.feature_selection import SelectFromModel
         from lightgbm import LGBMRegressor
 
-        # Train a quick tree to find the 40 most important features
+        # Train a quick tree to find the most important features dynamically
+        top_k = config.get("model_settings", {}).get("dnn", {}).get("top_k_features", 40)
         selector = SelectFromModel(
             LGBMRegressor(n_estimators=50, random_state=seed, n_jobs=-1), 
-            max_features=40, 
-            threshold=-np.inf, # Force it to strictly take the top 40
+            max_features=top_k, 
+            threshold=-np.inf, # Force it to strictly take the top_k
             prefit=False
         )
         
