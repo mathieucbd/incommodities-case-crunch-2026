@@ -180,6 +180,12 @@ def build_features(
     # This securely drops the very first 7 days (168 hours) of the dataset ensuring clean windows
     df_final = df_final.dropna()
 
+    import re
+    df_final.columns = [
+        re.sub(r'[^A-Za-z0-9_]+', '_', col) if col != TARGET_COL else col 
+        for col in df_final.columns
+    ]
+
     # 6) Dynamic output
     active_features = [col for col in df_final.columns if col != TARGET_COL]
 
