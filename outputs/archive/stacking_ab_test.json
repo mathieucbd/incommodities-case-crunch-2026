@@ -1,0 +1,20 @@
+{
+  "fr": {
+    "A. Fixed weights": 16.698641009845023,
+    "B. Ridge stacking": 18.776566521155523,
+    "C. Ridge + context": 18.317795448399732,
+    "D. Per-hour weights": 16.38399969165463,
+    "E. Quantile-gated": 18.432978629498134,
+    "F. Simple median": 17.34864394164511,
+    "CB standalone": 18.694485835613946
+  },
+  "uk": {
+    "A. Fixed weights": 10.567245161617256,
+    "B. Ridge stacking": 10.672892078384535,
+    "C. Ridge + context": 10.697963449830697,
+    "D. Per-hour weights": 10.536969327474612,
+    "E. Quantile-gated": 10.682415786980464,
+    "F. Simple median": 11.227496683699485,
+    "CB standalone": 10.697885738236721
+  }
+}

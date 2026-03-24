@@ -1,0 +1,223 @@
+{
+  "fr": [
+    {
+      "label": "Rolling mean 48h",
+      "rmse": 18.7034,
+      "rmse_hbc": 18.5248,
+      "bias": -1.77,
+      "iters": 75,
+      "tgt_mean": -0.8,
+      "tgt_std": 71.58
+    },
+    {
+      "label": "Rolling mean 72h",
+      "rmse": 18.5745,
+      "rmse_hbc": 18.3971,
+      "bias": -1.44,
+      "iters": 57,
+      "tgt_mean": -0.84,
+      "tgt_std": 72.03
+    },
+    {
+      "label": "Rolling mean 120h",
+      "rmse": 18.2664,
+      "rmse_hbc": 17.9646,
+      "bias": -2.63,
+      "iters": 50,
+      "tgt_mean": -1.52,
+      "tgt_std": 71.21
+    },
+    {
+      "label": "Rolling mean 168h << CURRENT",
+      "rmse": 17.6855,
+      "rmse_hbc": 17.3403,
+      "bias": -2.67,
+      "iters": 55,
+      "tgt_mean": -2.19,
+      "tgt_std": 68.94
+    },
+    {
+      "label": "Rolling mean 240h",
+      "rmse": 17.4347,
+      "rmse_hbc": 17.222,
+      "bias": 0.37,
+      "iters": 55,
+      "tgt_mean": -2.8,
+      "tgt_std": 73.74
+    },
+    {
+      "label": "Rolling mean 336h",
+      "rmse": 18.1232,
+      "rmse_hbc": 17.404,
+      "bias": 4.36,
+      "iters": 40,
+      "tgt_mean": -4.27,
+      "tgt_std": 76.75
+    },
+    {
+      "label": "EMA span=72h",
+      "rmse": 17.8732,
+      "rmse_hbc": 17.7358,
+      "bias": -1.43,
+      "iters": 56,
+      "tgt_mean": -1.15,
+      "tgt_std": 67.81
+    },
+    {
+      "label": "EMA span=120h",
+      "rmse": 17.5282,
+      "rmse_hbc": 17.2694,
+      "bias": -2.31,
+      "iters": 50,
+      "tgt_mean": -1.6,
+      "tgt_std": 68.48
+    },
+    {
+      "label": "EMA span=168h",
+      "rmse": 17.1294,
+      "rmse_hbc": 16.8766,
+      "bias": -2.19,
+      "iters": 50,
+      "tgt_mean": -2.06,
+      "tgt_std": 69.5
+    },
+    {
+      "label": "EMA span=240h",
+      "rmse": 17.0027,
+      "rmse_hbc": 16.8446,
+      "bias": 0.88,
+      "iters": 50,
+      "tgt_mean": -2.76,
+      "tgt_std": 71.39
+    },
+    {
+      "label": "Rolling median 168h",
+      "rmse": 18.434,
+      "rmse_hbc": 18.1852,
+      "bias": -1.88,
+      "iters": 61,
+      "tgt_mean": -2.8,
+      "tgt_std": 69.0
+    },
+    {
+      "label": "Basis (merit_order_cost)",
+      "rmse": 30.2082,
+      "rmse_hbc": 21.6907,
+      "bias": -20.65,
+      "iters": 1144,
+      "tgt_mean": -9.67,
+      "tgt_std": 72.68
+    }
+  ],
+  "uk": [
+    {
+      "label": "Basis (merit_order_cost) << CURRENT",
+      "rmse": 10.1941,
+      "rmse_hbc": 9.9723,
+      "bias": -0.51,
+      "iters": 2293,
+      "tgt_mean": 13.36,
+      "tgt_std": 52.21
+    },
+    {
+      "label": "Rolling mean 48h",
+      "rmse": 12.3345,
+      "rmse_hbc": 12.082,
+      "bias": -1.66,
+      "iters": 1187,
+      "tgt_mean": -0.52,
+      "tgt_std": 63.19
+    },
+    {
+      "label": "Rolling mean 72h",
+      "rmse": 12.9897,
+      "rmse_hbc": 12.2571,
+      "bias": -3.8,
+      "iters": 1003,
+      "tgt_mean": -0.59,
+      "tgt_std": 63.15
+    },
+    {
+      "label": "Rolling mean 120h",
+      "rmse": 12.3779,
+      "rmse_hbc": 11.5857,
+      "bias": -3.9,
+      "iters": 844,
+      "tgt_mean": -0.88,
+      "tgt_std": 64.77
+    },
+    {
+      "label": "Rolling mean 168h",
+      "rmse": 11.1585,
+      "rmse_hbc": 10.6625,
+      "bias": -2.45,
+      "iters": 2515,
+      "tgt_mean": -1.22,
+      "tgt_std": 66.55
+    },
+    {
+      "label": "Rolling mean 240h",
+      "rmse": 11.1704,
+      "rmse_hbc": 10.8314,
+      "bias": -1.4,
+      "iters": 2955,
+      "tgt_mean": -1.69,
+      "tgt_std": 70.04
+    },
+    {
+      "label": "Rolling mean 336h",
+      "rmse": 13.183,
+      "rmse_hbc": 11.8328,
+      "bias": 5.08,
+      "iters": 1017,
+      "tgt_mean": -2.81,
+      "tgt_std": 73.65
+    },
+    {
+      "label": "EMA span=72h",
+      "rmse": 11.2139,
+      "rmse_hbc": 10.8456,
+      "bias": -2.09,
+      "iters": 2708,
+      "tgt_mean": -0.9,
+      "tgt_std": 61.57
+    },
+    {
+      "label": "EMA span=120h",
+      "rmse": 11.1157,
+      "rmse_hbc": 10.7638,
+      "bias": -1.66,
+      "iters": 3075,
+      "tgt_mean": -1.21,
+      "tgt_std": 62.96
+    },
+    {
+      "label": "EMA span=168h",
+      "rmse": 10.927,
+      "rmse_hbc": 10.6908,
+      "bias": 0.16,
+      "iters": 1865,
+      "tgt_mean": -1.51,
+      "tgt_std": 64.5
+    },
+    {
+      "label": "EMA span=240h",
+      "rmse": 11.0846,
+      "rmse_hbc": 10.6472,
+      "bias": 2.12,
+      "iters": 1632,
+      "tgt_mean": -1.97,
+      "tgt_std": 66.8
+    },
+    {
+      "label": "Rolling median 168h",
+      "rmse": 11.1112,
+      "rmse_hbc": 10.8933,
+      "bias": -0.45,
+      "iters": 2497,
+      "tgt_mean": 1.2,
+      "tgt_std": 66.63
+    }
+  ],
+  "timestamp": "2026-03-24 15:52:15"
+}

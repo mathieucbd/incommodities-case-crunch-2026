@@ -1,0 +1,118 @@
+{
+  "fr": [
+    {
+      "label": "Baseline (no winsorization)",
+      "rmse": 16.6695,
+      "rmse_hbc": 16.5174,
+      "bias": -0.56,
+      "iters": 57
+    },
+    {
+      "label": "MAD z=2.5 on train target",
+      "rmse": 16.9576,
+      "rmse_hbc": 16.8051,
+      "bias": -0.37,
+      "iters": 56
+    },
+    {
+      "label": "MAD z=3 on train target",
+      "rmse": 16.8041,
+      "rmse_hbc": 16.6464,
+      "bias": -0.39,
+      "iters": 55
+    },
+    {
+      "label": "MAD z=4 on train target",
+      "rmse": 16.8089,
+      "rmse_hbc": 16.661,
+      "bias": -0.82,
+      "iters": 54
+    },
+    {
+      "label": "MAD z=5 on train target",
+      "rmse": 16.693,
+      "rmse_hbc": 16.5622,
+      "bias": -0.44,
+      "iters": 54
+    },
+    {
+      "label": "Percentile 1%/99% on train target",
+      "rmse": 16.6934,
+      "rmse_hbc": 16.5625,
+      "bias": -0.44,
+      "iters": 54
+    },
+    {
+      "label": "Percentile 2%/98% on train target",
+      "rmse": 16.8011,
+      "rmse_hbc": 16.6538,
+      "bias": -0.84,
+      "iters": 54
+    },
+    {
+      "label": "Percentile 5%/95% on train target",
+      "rmse": 16.9638,
+      "rmse_hbc": 16.7829,
+      "bias": -1.06,
+      "iters": 56
+    },
+    {
+      "label": "MAD z=3 on predictions (post-proc)",
+      "rmse": 16.6695,
+      "rmse_hbc": 16.5174,
+      "bias": -0.56,
+      "iters": 57
+    }
+  ],
+  "uk": [
+    {
+      "label": "Baseline (no winsorization)",
+      "rmse": 10.1941,
+      "rmse_hbc": 9.9723,
+      "bias": -0.51,
+      "iters": 2293
+    },
+    {
+      "label": "MAD z=2.5 on train target",
+      "rmse": 11.5843,
+      "rmse_hbc": 11.2353,
+      "bias": -2.14,
+      "iters": 1577
+    },
+    {
+      "label": "MAD z=3 on train target",
+      "rmse": 11.1553,
+      "rmse_hbc": 10.8185,
+      "bias": -2.07,
+      "iters": 782
+    },
+    {
+      "label": "MAD z=4 on train target",
+      "rmse": 10.4417,
+      "rmse_hbc": 10.1752,
+      "bias": -1.48,
+      "iters": 1401
+    },
+    {
+      "label": "MAD z=5 on train target",
+      "rmse": 10.1758,
+      "rmse_hbc": 9.9852,
+      "bias": -1.18,
+      "iters": 1342
+    },
+    {
+      "label": "Percentile 1%/99% on train target",
+      "rmse": 10.4666,
+      "rmse_hbc": 10.2485,
+      "bias": -1.03,
+      "iters": 1188
+    },
+    {
+      "label": "Percentile 2%/98% on train target",
+      "rmse": 10.5034,
+      "rmse_hbc": 10.1747,
+      "bias": -1.91,
+      "iters": 695
+    }
+  ]
+}

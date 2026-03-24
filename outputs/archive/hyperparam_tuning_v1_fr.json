@@ -1,0 +1,21 @@
+{
+  "target": "FR stationary (spot - roll_168h_mean)",
+  "weights": "exp_decay(2.0) / clip(roll_std\u00b2, 1)",
+  "best_rmse": 17.840055912675652,
+  "best_rmse_hbc": 17.44140505785082,
+  "best_features": "v5-27",
+  "best_n_features": 27,
+  "best_iter": 88,
+  "params": {
+    "loss_function": "RMSE",
+    "eval_metric": "RMSE",
+    "iterations": 15000,
+    "learning_rate": 0.03,
+    "depth": 3,
+    "l2_leaf_reg": 30,
+    "min_child_samples": 1,
+    "subsample": 0.7,
+    "colsample_bylevel": 0.5,
+    "random_seed": 42
+  }
+}

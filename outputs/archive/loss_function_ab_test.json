@@ -1,0 +1,158 @@
+{
+  "fr": [
+    {
+      "label": "RMSE (baseline)",
+      "loss": "RMSE",
+      "rmse": 16.6695,
+      "rmse_hbc": 16.5174,
+      "bias": -0.56,
+      "iters": 57
+    },
+    {
+      "label": "MAE (L1)",
+      "loss": "MAE",
+      "rmse": 17.0316,
+      "rmse_hbc": 16.8731,
+      "bias": 0.46,
+      "iters": 40
+    },
+    {
+      "label": "Huber delta=10 (aggressive)",
+      "loss": "Huber:delta=10",
+      "rmse": 16.9364,
+      "rmse_hbc": 16.7584,
+      "bias": -1.51,
+      "iters": 34
+    },
+    {
+      "label": "Huber delta=20",
+      "loss": "Huber:delta=20",
+      "rmse": 17.1759,
+      "rmse_hbc": 16.9205,
+      "bias": -2.1,
+      "iters": 44
+    },
+    {
+      "label": "Huber delta=30 (~MAD)",
+      "loss": "Huber:delta=30",
+      "rmse": 16.9583,
+      "rmse_hbc": 16.7755,
+      "bias": -1.15,
+      "iters": 55
+    },
+    {
+      "label": "Huber delta=50 (~std)",
+      "loss": "Huber:delta=50",
+      "rmse": 17.1465,
+      "rmse_hbc": 17.0037,
+      "bias": -0.38,
+      "iters": 50
+    },
+    {
+      "label": "Huber delta=80 (mild)",
+      "loss": "Huber:delta=80",
+      "rmse": 16.7872,
+      "rmse_hbc": 16.6105,
+      "bias": -0.89,
+      "iters": 56
+    },
+    {
+      "label": "Lq q=1.5 (between MAE/MSE)",
+      "loss": "Lq:q=1.5",
+      "rmse": 16.8736,
+      "rmse_hbc": 16.6662,
+      "bias": -1.64,
+      "iters": 183
+    },
+    {
+      "label": "Lq q=1.8 (close to MSE)",
+      "loss": "Lq:q=1.8",
+      "rmse": 16.9082,
+      "rmse_hbc": 16.6558,
+      "bias": -2.0,
+      "iters": 55
+    },
+    {
+      "label": "Quantile 0.5 (=MAE)",
+      "loss": "Quantile:alpha=0.5",
+      "rmse": 17.0316,
+      "rmse_hbc": 16.8731,
+      "bias": 0.46,
+      "iters": 40
+    }
+  ],
+  "uk": [
+    {
+      "label": "RMSE (baseline)",
+      "loss": "RMSE",
+      "rmse": 10.1941,
+      "rmse_hbc": 9.9723,
+      "bias": -0.51,
+      "iters": 2293
+    },
+    {
+      "label": "MAE (L1)",
+      "loss": "MAE",
+      "rmse": 10.0345,
+      "rmse_hbc": 9.8731,
+      "bias": 0.38,
+      "iters": 795
+    },
+    {
+      "label": "Huber delta=5 (aggressive)",
+      "loss": "Huber:delta=5",
+      "rmse": 10.6609,
+      "rmse_hbc": 10.4746,
+      "bias": -1.05,
+      "iters": 1490
+    },
+    {
+      "label": "Huber delta=10",
+      "loss": "Huber:delta=10",
+      "rmse": 10.6384,
+      "rmse_hbc": 10.4621,
+      "bias": -0.62,
+      "iters": 2543
+    },
+    {
+      "label": "Huber delta=15 (~MAD)",
+      "loss": "Huber:delta=15",
+      "rmse": 10.7241,
+      "rmse_hbc": 10.5483,
+      "bias": -0.99,
+      "iters": 1105
+    },
+    {
+      "label": "Huber delta=25",
+      "loss": "Huber:delta=25",
+      "rmse": 10.4425,
+      "rmse_hbc": 10.2343,
+      "bias": -1.16,
+      "iters": 715
+    },
+    {
+      "label": "Huber delta=40 (~std)",
+      "loss": "Huber:delta=40",
+      "rmse": 10.5476,
+      "rmse_hbc": 10.3111,
+      "bias": -1.1,
+      "iters": 765
+    },
+    {
+      "label": "Lq q=1.5 (between MAE/MSE)",
+      "loss": "Lq:q=1.5",
+      "rmse": 10.1997,
+      "rmse_hbc": 9.9913,
+      "bias": -1.01,
+      "iters": 2619
+    },
+    {
+      "label": "Lq q=1.8 (close to MSE)",
+      "loss": "Lq:q=1.8",
+      "rmse": 10.1206,
+      "rmse_hbc": 9.8952,
+      "bias": -1.11,
+      "iters": 2437
+    }
+  ]
+}

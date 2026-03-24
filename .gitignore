@@ -1,77 +1,32 @@
-# ---------------------------------------------------
-# Virtual Environments
-# ---------------------------------------------------
-.venv/
-venv/
-env/
-ENV/
-
-# ---------------------------------------------------
-# Data Files (Stealth Configuration)
-# ---------------------------------------------------
-
-# 1. Ignore everything inside the data folder
-data/*
-
-# 2. UN-IGNORE the specific directories we want Git to know about
-!data/raw/
-!data/processed/
-!data/outputs/
-
-# 3. Ignore everything inside those specific directories
-data/raw/*
-data/processed/*
-data/outputs/*
-
-# 4. UN-IGNORE the .gitkeep files so the empty folders get committed
-!data/raw/.gitkeep
-!data/processed/.gitkeep
-!data/outputs/.gitkeep
-
-# ---------------------------------------------------
-# Jupyter Notebooks
-# ---------------------------------------------------
-.ipynb_checkpoints/
-*/.ipynb_checkpoints/
-
-# ---------------------------------------------------
-# Python Byte-compiled / Optimized / DLL files
-# ---------------------------------------------------
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
+*.egg-info/
+dist/
+build/
 
-# ---------------------------------------------------
-# IDEs and Editors
-# ---------------------------------------------------
+# Virtual environment
+.venv/
+
+# Lock file (regenerable)
+uv.lock
+
+# Data (too large for git)
+data/raw/
+data/processed/
+
+# Model artifacts
+outputs/models/
+outputs/predictions/
+catboost_info/
+
+# Notebooks checkpoints & executed copies
+.ipynb_checkpoints/
+notebooks/*_executed.ipynb
+
+# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# ---------------------------------------------------
-# OS Generated Files
-# ---------------------------------------------------
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# ---------------------------------------------------
-# Testing & Tooling Caches (Ruff, Pytest, MyPy)
-# ---------------------------------------------------
-.ruff_cache/
-.pytest_cache/
-.mypy_cache/
-.coverage
-htmlcov/
-
-# ---------------------------------------------------
-# Environment Variables / Secrets
-# ---------------------------------------------------
-.env
-.env.*data/outputs/catboost_info/
