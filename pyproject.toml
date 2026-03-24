@@ -21,6 +21,7 @@ dependencies = [
     "tensorflow>=2.13.0",
     # Bayesian Hyperparameter Optimization (For TPE algorithm)
     "hyperopt>=0.2.7",
+    "optuna>=3.6.0",
     # Explainability & Visualizations (For DM test plots and SHAP)
     "shap>=0.42.0",
     "matplotlib>=3.7.0",
@@ -30,6 +31,7 @@ dependencies = [
     "ipykernel>=6.25.0",
     "torch>=2.10.0",
     "setuptools<70.0.0",
+    "holidays>=0.93",
 ]
 
 [build-system]

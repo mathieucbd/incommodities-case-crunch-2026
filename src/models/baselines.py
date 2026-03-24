@@ -1,24 +1,21 @@
 import logging
-import yaml
+import warnings
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from sklearn.linear_model import LassoLarsIC, Lasso
-import sys
-import warnings
+import yaml
 from sklearn.exceptions import ConvergenceWarning
+from sklearn.linear_model import Lasso, LassoLarsIC
 
-# Ensure src is in standard path for execution
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-
-# Suppress convergence warnings from coordinate descent with large feature matrices
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
-
-from src.data_ingestion import load_and_merge_zone
-from src.features import build_features
+from src.constants import TARGET_COLS
+from src.data_ingestion import load_competition_data
+from src.evaluation.metrics import MAE, RMSE, rMAE, save_metrics_to_csv
+from src.features import apply_full_feature_engineering
 from src.preprocessing import chronological_train_val_test_split, scale_data
-from src.evaluation.metrics import MAE, sMAPE, rMAE, save_metrics_to_csv
-from src.constants import TARGET_COL
+
+# Suppress convergence warnings from coordinate descent with large feature matrices.
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +24,25 @@ def predict_naive(
     y_full: pd.Series, test_indices: pd.DatetimeIndex, lag_hours: int = 168
 ) -> pd.Series:
     """
-    Predicts using a direct 168-hour persistence model sequentially mapped exactly mapping
-    historical indices natively preventing alignment skew.
+    Weekly persistence baseline (T-168h) used as a simple benchmark.
     """
-    predictions = y_full.shift(lag_hours).reindex(test_indices)
-    return predictions
+    shifted = y_full.shift(lag_hours)
+
+    # Handle duplicated datetimes (e.g., DST transitions) via datetime+occurrence keys.
+    shifted_df = shifted.to_frame("pred")
+    shifted_df["datetime"] = shifted_df.index
+    shifted_df["occ"] = shifted_df.groupby(level=0).cumcount()
+    shifted_keyed = shifted_df.set_index(["datetime", "occ"])["pred"]
+
+    test_idx = pd.DatetimeIndex(test_indices)
+    test_df = pd.DataFrame({"datetime": test_idx})
+    test_df["occ"] = test_df.groupby("datetime").cumcount()
+    test_key = pd.MultiIndex.from_frame(test_df[["datetime", "occ"]])
+
+    preds = shifted_keyed.reindex(test_key)
+    preds.index = test_idx
+    preds.name = "Naive_Predictions"
+    return preds
 
 
 def predict_lear(
@@ -42,246 +53,407 @@ def predict_lear(
     alpha: float | None = None,
 ) -> pd.Series:
     """
-    Trains 24 independent hourly LassoLarsIC models evaluating a daily moving calibration window.
-    Extracts the core logical architecture from Jesus Lago's epftoolbox tracking structural
-    mathematics without the excessive computational overhead.
+    Train 24 independent hourly Lasso models with a daily rolling calibration window.
     """
-    unique_test_days = np.unique(test_indices.date)
+    test_idx = pd.DatetimeIndex(test_indices)
+    unique_test_days = np.unique(test_idx.date)
     predictions = pd.Series(index=test_indices, dtype=float, name="LEAR_Predictions")
+    x_idx = pd.DatetimeIndex(X_full.index)
+    y_idx = pd.DatetimeIndex(y_full.index)
+    last_labeled_ts = y_idx.max() if len(y_idx) > 0 else None
 
-    # Loop over every unique day in the testing partition
+    # Build a one-to-one aligned view of test features using datetime+occurrence keys
+    # so duplicated timestamps (DST transitions) remain positionally stable.
+    X_keyed = X_full.copy()
+    X_keyed["datetime"] = x_idx
+    X_keyed["occ"] = X_keyed.groupby(level=0).cumcount()
+    X_keyed = X_keyed.set_index(["datetime", "occ"])
+
+    test_map = pd.DataFrame({"datetime": test_idx})
+    test_map["occ"] = test_map.groupby("datetime").cumcount()
+    test_key = pd.MultiIndex.from_frame(test_map[["datetime", "occ"]])
+
+    X_test_aligned = X_keyed.reindex(test_key)
+    X_test_aligned.index = test_idx
+
     for current_date in unique_test_days:
-        current_date_ts = pd.Timestamp(
-            current_date, tz=test_indices.tz if hasattr(test_indices, "tz") else "UTC"
-        )
-        window_start = current_date_ts - pd.Timedelta(days=calibration_window_days)
+        current_date_ts = pd.Timestamp(current_date)
 
-        # 1. Geometrically slice strictly prior data bounds safely ensuring 0 leakage
-        mask_train = (X_full.index >= window_start) & (X_full.index < current_date_ts)
-        X_calib = X_full.loc[mask_train]
-        y_calib = y_full.loc[mask_train]
+        # When predicting beyond the labeled horizon (e.g., Kaggle test), keep
+        # using the last available labeled calibration window instead of sliding
+        # into an unlabeled period that collapses the calibration set.
+        if last_labeled_ts is not None and current_date_ts > last_labeled_ts:
+            train_end = last_labeled_ts + pd.Timedelta(hours=1)
+        else:
+            train_end = current_date_ts
+        window_start = train_end - pd.Timedelta(days=calibration_window_days)
 
-        # Identify the target slices available on the specific test date
-        mask_test = test_indices.date == current_date
-        day_test_indices = test_indices[mask_test]
+        # Strictly prior data for this test date to avoid leakage.
+        mask_train_x = (x_idx >= window_start) & (x_idx < train_end)
+        mask_train_y = (y_idx >= window_start) & (y_idx < train_end)
+        X_calib = X_full.loc[mask_train_x]
+        y_calib = y_full.loc[mask_train_y]
 
-        # Subset features
-        X_test_day = X_full.loc[day_test_indices]
+        day_mask_test = test_idx.date == current_date
+        X_test_day = X_test_aligned.loc[day_mask_test]
 
-        # 2. Iterate structurally through the 24 internal electricity models
         for h in range(24):
-            # Select samples specifically matching this hour from the calibration window
-            hour_mask_calib = X_calib.index.hour == h
+            hour_mask_calib = pd.DatetimeIndex(X_calib.index).hour == h
             if not hour_mask_calib.any():
                 continue
 
             X_calib_h = X_calib.loc[hour_mask_calib]
-            y_calib_h = y_calib.loc[hour_mask_calib]
+            hour_mask_calib_y = pd.DatetimeIndex(y_calib.index).hour == h
+            if not hour_mask_calib_y.any():
+                continue
+            y_calib_h = y_calib.loc[hour_mask_calib_y]
+            common_calib_idx = X_calib_h.index.intersection(y_calib_h.index)
+            if common_calib_idx.empty:
+                continue
+            X_calib_h = X_calib_h.loc[common_calib_idx]
+            y_calib_h = y_calib_h.loc[common_calib_idx]
 
-            # Verify the current testing day actually contains this target hour
-            hour_mask_test = X_test_day.index.hour == h
-            if not hour_mask_test.any():
+            hour_mask_test_day = pd.DatetimeIndex(X_test_day.index).hour == h
+            if not hour_mask_test_day.any():
                 continue
 
-            X_test_h = X_test_day.loc[hour_mask_test]
+            X_test_h = X_test_day.loc[hour_mask_test_day]
+            pred_mask = day_mask_test & (test_idx.hour == h)
 
-            # 3. Instantiate, Fit, and Predict isolated LEAR hourly model
-            noise_var = float(np.var(y_calib_h)) if len(y_calib_h) <= X_calib_h.shape[1] else None
-            model = (
+            # Leak-safe local imputation: fit fill values on calibration slice only.
+            if X_calib_h.isna().to_numpy().any() or X_test_h.isna().to_numpy().any():
+                X_calib_arr = X_calib_h.to_numpy(dtype=float, copy=True)
+                X_test_arr = X_test_h.to_numpy(dtype=float, copy=True)
+
+                # Avoid RuntimeWarning from nanmedian on columns that are entirely NaN.
+                all_nan_cols = np.isnan(X_calib_arr).all(axis=0)
+                fill_values = np.zeros(X_calib_arr.shape[1], dtype=float)
+                valid_cols = ~all_nan_cols
+                if valid_cols.any():
+                    fill_values[valid_cols] = np.nanmedian(
+                        X_calib_arr[:, valid_cols], axis=0
+                    )
+
+                nan_mask_calib = np.isnan(X_calib_arr)
+                if nan_mask_calib.any():
+                    X_calib_arr[nan_mask_calib] = fill_values[
+                        np.where(nan_mask_calib)[1]
+                    ]
+
+                nan_mask_test = np.isnan(X_test_arr)
+                if nan_mask_test.any():
+                    X_test_arr[nan_mask_test] = fill_values[np.where(nan_mask_test)[1]]
+
+                X_calib_h = pd.DataFrame(
+                    X_calib_arr, index=X_calib_h.index, columns=X_calib_h.columns
+                )
+                X_test_h = pd.DataFrame(
+                    X_test_arr, index=X_test_h.index, columns=X_test_h.columns
+                )
+
+            # Drop constant columns to avoid singular design matrices in LARS.
+            non_constant_mask = X_calib_h.nunique(dropna=False).to_numpy() > 1
+            X_calib_h = X_calib_h.loc[:, non_constant_mask]
+            X_test_h = X_test_h.loc[:, non_constant_mask]
+
+            noise_var = (
+                float(np.var(y_calib_h))
+                if len(y_calib_h) <= X_calib_h.shape[1]
+                else None
+            )
+            primary_model = (
                 LassoLarsIC(criterion="aic", max_iter=10000, noise_variance=noise_var)
                 if alpha is None
                 else Lasso(alpha=alpha, max_iter=10000, tol=1e-3, random_state=42)
             )
+            secondary_model = (
+                Lasso(alpha=1e-3, max_iter=10000, tol=1e-3, random_state=42)
+                if alpha is None
+                else None
+            )
+
             try:
-                model.fit(X_calib_h, y_calib_h)
-                preds = model.predict(X_test_h)
-                predictions.loc[X_test_h.index] = preds
-            except Exception as e:
-                logger.warning(
-                    f"Failed LEAR fit Day: {current_date}, Hour: {h}. Reason: {e}"
-                )
-                # Naive fallback mean assignment
-                predictions.loc[X_test_h.index] = y_calib_h.mean()
+                if X_calib_h.empty or X_calib_h.shape[1] == 0:
+                    raise ValueError(
+                        "No usable features remain after local imputation/pruning"
+                    )
+                primary_model.fit(X_calib_h, y_calib_h)
+                pred_values = np.asarray(primary_model.predict(X_test_h)).reshape(-1)
+                if pred_values.size != int(pred_mask.sum()):
+                    raise ValueError(
+                        f"Prediction length mismatch: pred={pred_values.size}, expected={int(pred_mask.sum())}"
+                    )
+                predictions.loc[pred_mask] = pred_values
+            except Exception as exc:
+                if secondary_model is not None:
+                    try:
+                        secondary_model.fit(X_calib_h, y_calib_h)
+                        pred_values = np.asarray(
+                            secondary_model.predict(X_test_h)
+                        ).reshape(-1)
+                        if pred_values.size != int(pred_mask.sum()):
+                            raise ValueError(
+                                f"Prediction length mismatch: pred={pred_values.size}, expected={int(pred_mask.sum())}"
+                            )
+                        predictions.loc[pred_mask] = pred_values
+                        continue
+                    except Exception as exc_secondary:
+                        logger.warning(
+                            "Failed LEAR fit for %s hour %s. LassoLarsIC error: %s | Lasso fallback error: %s",
+                            current_date,
+                            h,
+                            exc,
+                            exc_secondary,
+                        )
+                else:
+                    logger.warning(
+                        "Failed LEAR fit for %s hour %s. Reason: %s",
+                        current_date,
+                        h,
+                        exc,
+                    )
+                predictions.loc[pred_mask] = y_calib_h.mean()
 
     return predictions
+
+
+def inverse_transform_target_predictions(
+    preds_scaled: pd.Series,
+    target_scaler,
+    target_cols: list[str],
+    target_col: str,
+) -> pd.Series:
+    """
+    Inverse-transform one target from multi-target scaled space.
+
+    RobustScaler inverse_transform expects a 2D array with all target columns,
+    so we reconstruct the full target matrix and extract the requested column.
+    """
+    if target_col not in target_cols:
+        raise ValueError(f"Target '{target_col}' not found in fitted target columns")
+
+    target_pos = target_cols.index(target_col)
+    valid_mask = ~preds_scaled.isna()
+    output = pd.Series(index=preds_scaled.index, dtype=float, name=target_col)
+
+    if valid_mask.any():
+        valid_vals = preds_scaled.loc[valid_mask].to_numpy()
+        full_target_matrix = np.zeros((valid_vals.shape[0], len(target_cols)))
+        full_target_matrix[:, target_pos] = valid_vals
+        unscaled = target_scaler.inverse_transform(full_target_matrix)[:, target_pos]
+        output.loc[valid_mask] = unscaled
+
+    return output
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
-    with open("config.yaml", "r") as f:
+    with open("config.yaml", "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    raw_directory = config.get("data", {}).get("raw_dir", "data/raw/auhack_legacy/")
-    base_calibration_window = (
-        config.get("model_settings", {})
-        .get("lear", {})
-        .get("calibration_window_days", 182)
-    )
-    base_lear_alpha = (
-        config.get("model_settings", {}).get("lear", {}).get("alpha", None)
-    )
+    split_cfg = config.get("data", {}).get("splits", {})
+    val_start = split_cfg.get("val_start")
+    test_start = split_cfg.get("test_start")
+    if val_start is None or test_start is None:
+        raise ValueError("Missing val_start/test_start in config['data']['splits']")
 
-    try:
-        with open("best_hyperparameters.yaml", "r") as f:
-            best_hyperparams = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        best_hyperparams = {}
+    lear_cfg = config.get("model_settings", {}).get("lear", {})
+    calibration_window = int(
+        lear_cfg.get("calibration_window", lear_cfg.get("calibration_window_days", 56))
+    )
+    alpha_val = lear_cfg.get("alpha", None)
+    alpha = float(alpha_val) if alpha_val is not None else None
 
     val_pred_dir = Path("data/outputs/predictions/val")
     test_pred_dir = Path("data/outputs/predictions/test")
     val_pred_dir.mkdir(parents=True, exist_ok=True)
     test_pred_dir.mkdir(parents=True, exist_ok=True)
 
-    target_zones = config.get("data", {}).get("target_zones", [])
-    flow_only_zones = config["data"].get("flow_only_zones", [])
-    all_zones = target_zones + flow_only_zones
-    raw_data_dict = {z: load_and_merge_zone(z, raw_directory) for z in all_zones}
+    logger.info("Loading Kaggle training data...")
+    df_train = load_competition_data(mode="train")
+    df_train = apply_full_feature_engineering(df_train)
 
-    missing_targets = [z for z in target_zones if z not in raw_data_dict]
-    if missing_targets:
-        raise ValueError(
-            f"Missing required target zones in preloaded raw_data_dict: {missing_targets}"
+    target_cols = [c for c in TARGET_COLS if c in df_train.columns]
+    if not target_cols:
+        raise ValueError("No configured target columns found in training dataframe")
+
+    feature_cols = [c for c in df_train.columns if c not in target_cols]
+
+    logger.info("Applying chronological train/val/test split...")
+    train_df, val_df, test_df = chronological_train_val_test_split(
+        df_train,
+        val_start=val_start,
+        test_start=test_start,
+    )
+    logger.info(
+        "Split sizes (from labeled train data): train=%d, val=%d, test=%d",
+        len(train_df),
+        len(val_df),
+        len(test_df),
+    )
+    logger.info(
+        "Evaluation uses validation split; files in data/outputs/predictions/test/*.csv are Kaggle x_test predictions."
+    )
+
+    logger.info("Scaling with RobustScaler fit on train only...")
+    train_s, val_s, test_s, _, targ_scaler = scale_data(train_df, val_df, test_df)
+    if val_s is None or test_s is None:
+        raise ValueError("Validation/test scaled frames are missing")
+    val_s_df = val_s
+    test_s_df = test_s
+
+    X_full_eval = pd.concat(
+        [train_s[feature_cols], val_s_df[feature_cols], test_s_df[feature_cols]]
+    ).sort_index()
+
+    val_preds_dict_naive: dict[str, pd.Series] = {}
+    val_preds_dict_lear: dict[str, pd.Series] = {}
+
+    logger.info("Running LEAR evaluation per target...")
+    # Training-time evaluation is always performed on validation.
+    eval_df = val_df
+    eval_label = "val"
+    for idx in range(len(target_cols)):
+        col = target_cols[idx]
+        y_full_unscaled = pd.concat([train_df[col], val_df[col]]).sort_index()
+
+        # Naive persistence benchmark in original EUR/MWh space.
+        val_preds_naive = predict_naive(
+            y_full_unscaled,
+            pd.DatetimeIndex(val_df.index),
+            lag_hours=168,
         )
+        val_preds_dict_naive[col] = val_preds_naive
 
-    val_preds_dict_naive = {}
-    val_preds_dict_lear = {}
-    test_preds_dict_naive = {}
-    test_preds_dict_lear = {}
-
-    zone_mae_naive = {}
-    zone_mae_lear = {}
-
-    for target_zone in target_zones:
-        logger.info(f"Establishing Baselines natively for {target_zone}...")
-
-        lear_params_zone = best_hyperparams.get("LEAR", {}).get(target_zone, {})
-        calibration_window = int(
-            lear_params_zone.get("calibration_window", base_calibration_window)
-        )
-        alpha_val = lear_params_zone.get("alpha", base_lear_alpha)
-        alpha_zone = float(alpha_val) if alpha_val is not None else None
-
-        df, active_features = build_features(
-            raw_data_dict, target_zone, lag_actual_flows=True
-        )
-
-        logger.info("Executing Train / Val / Test exact chronological splits...")
-        train_df, val_df, test_df = chronological_train_val_test_split(
-            df, val_start=config["data"]["val_start"], test_start=config["data"]["test_start"]
-        )
-
-        X_train = train_df[active_features]
-        y_train = train_df[TARGET_COL]
-
-        X_val = val_df[active_features]
-        y_val = val_df[TARGET_COL]
-
-        X_test = test_df[active_features]
-        y_test = test_df[TARGET_COL]
-
-        logger.info("Scaling features strictly referencing Training distributions...")
-        X_train_s, X_val_s, X_test_s, feature_scaler, _ = scale_data(X_train, X_val, X_test)
-
-        # We reconstruct the sequentially shifted mathematical arrays uniformly allowing specific slices
-        X_full = pd.concat([X_train_s, X_val_s, X_test_s]).sort_index()
-        y_full = pd.concat([y_train, y_val, y_test]).sort_index()
-        val_idx = X_val.index
-        test_idx = X_test.index
-
-        logger.info("========================================")
-        logger.info(
-            f"Targeting Naive (168h Persistence) across {len(test_idx)} points..."
-        )
-        val_preds_naive = predict_naive(y_full, val_idx, lag_hours=168)
-        test_preds_naive = predict_naive(y_full, test_idx, lag_hours=168)
-
-        logger.info(
-            f"Establishing LEAR pseudo-online calibrations mapping {calibration_window} days (alpha={alpha_zone})..."
-        )
-        val_preds_lear = predict_lear(
-            X_full,
-            y_full,
-            val_idx,
+        val_preds = predict_lear(
+            X_full_eval,
+            y_full_unscaled,
+            pd.DatetimeIndex(val_s_df.index),
             calibration_window_days=calibration_window,
-            alpha=alpha_zone,
-        )
-        test_preds_lear = predict_lear(
-            X_full,
-            y_full,
-            test_idx,
-            calibration_window_days=calibration_window,
-            alpha=alpha_zone,
+            alpha=alpha,
         )
 
-        logger.info("========================================")
-        logger.info("--------- Evaluation Metrics -----------")
+        val_preds_dict_lear[col] = val_preds
 
-        # Validate mathematical alignment maps cleanly
-        valid_naive = ~test_preds_naive.isna()
-        y_t_n = y_test.loc[valid_naive]
-        p_n = test_preds_naive.loc[valid_naive]
+        eval_preds_naive = val_preds_naive
+        valid_naive = ~eval_preds_naive.isna()
+        y_true_naive = eval_df.loc[valid_naive, col]
+        y_pred_naive = eval_preds_naive.loc[valid_naive]
 
-        logger.info(f"[NAIVE 168h Baseline - {target_zone}]")
-        mae_naive = MAE(y_t_n, p_n)
-        smape_naive = sMAPE(y_t_n, p_n) * 100
-        rmae_naive = rMAE(y_t_n, p_n, m="W")
-        logger.info(f"  MAE:   {mae_naive:.3f} EUR/MWh")
-        logger.info(f"  sMAPE: {smape_naive:.3f} %")
-        logger.info(f"  rMAE:  {rmae_naive:.3f}")
-        save_metrics_to_csv(
-            zone=target_zone,
-            model_name="Naive 168h",
-            metrics_dict={
-                "MAE": mae_naive,
-                "sMAPE": smape_naive,
-                "rMAE": rmae_naive,
-            },
-        )
-        zone_mae_naive[target_zone] = mae_naive
+        if y_true_naive.empty:
+            logger.warning(
+                "Skipping Naive metrics for %s on %s split (no rows)", col, eval_label
+            )
+        else:
+            mae_naive = MAE(y_true_naive, y_pred_naive)
+            rmse_naive = RMSE(y_true_naive, y_pred_naive)
+            rmae_naive = rMAE(y_true_naive, y_pred_naive, m="W")
 
-        # Store predictions for this zone
-        val_preds_dict_naive[target_zone] = val_preds_naive
-        test_preds_dict_naive[target_zone] = test_preds_naive
+            logger.info(
+                "[Naive-168h - %s | %s] MAE: %.3f EUR/MWh", col, eval_label, mae_naive
+            )
+            logger.info(
+                "[Naive-168h - %s | %s] RMSE: %.3f EUR/MWh", col, eval_label, rmse_naive
+            )
+            logger.info(
+                "[Naive-168h - %s | %s] rMAE: %.3f", col, eval_label, rmae_naive
+            )
+            save_metrics_to_csv(
+                zone=col,
+                model_name=f"Naive 168h ({eval_label})",
+                metrics_dict={"MAE": mae_naive, "RMSE": rmse_naive, "rMAE": rmae_naive},
+            )
 
-        logger.info("----------------------------------------")
+        eval_preds_lear = val_preds
+        valid_mask = ~eval_preds_lear.isna()
+        y_true = eval_df.loc[valid_mask, col]
+        y_pred = eval_preds_lear.loc[valid_mask]
 
-        # Validate LEAR natively dropping execution gaps dynamically
-        valid_lear = ~test_preds_lear.isna()
-        y_t_l = y_test.loc[valid_lear]
-        p_l = test_preds_lear.loc[valid_lear]
+        if y_true.empty:
+            logger.warning(
+                "Skipping LEAR metrics for %s on %s split (no rows)", col, eval_label
+            )
+        else:
+            mae = MAE(y_true, y_pred)
+            rmse = RMSE(y_true, y_pred)
+            rmae = rMAE(y_true, y_pred, m="W")
 
-        logger.info(f"[LEAR LassoLarsIC (24-Hour Windows) - {target_zone}]")
-        mae_lear = MAE(y_t_l, p_l)
-        smape_lear = sMAPE(y_t_l, p_l) * 100
-        rmae_lear = rMAE(y_t_l, p_l, m="W")
-        logger.info(f"  MAE:   {mae_lear:.3f} EUR/MWh")
-        logger.info(f"  sMAPE: {smape_lear:.3f} %")
-        logger.info(f"  rMAE:  {rmae_lear:.3f}")
-        save_metrics_to_csv(
-            zone=target_zone,
-            model_name="LEAR",
-            metrics_dict={"MAE": mae_lear, "sMAPE": smape_lear, "rMAE": rmae_lear},
-        )
-        zone_mae_lear[target_zone] = mae_lear
+            logger.info("[LEAR - %s | %s] MAE: %.3f EUR/MWh", col, eval_label, mae)
+            logger.info("[LEAR - %s | %s] RMSE: %.3f EUR/MWh", col, eval_label, rmse)
+            logger.info("[LEAR - %s | %s] rMAE: %.3f", col, eval_label, rmae)
+            save_metrics_to_csv(
+                zone=col,
+                model_name=f"LEAR ({eval_label})",
+                metrics_dict={"MAE": mae, "RMSE": rmse, "rMAE": rmae},
+            )
 
-        # Store predictions for this zone
-        val_preds_dict_lear[target_zone] = val_preds_lear
-        test_preds_dict_lear[target_zone] = test_preds_lear
-        logger.info("========================================")
-
-    # Save multi-zone predictions as DataFrames
     pd.DataFrame(val_preds_dict_naive).to_csv(val_pred_dir / "naive.csv")
-    pd.DataFrame(test_preds_dict_naive).to_csv(test_pred_dir / "naive.csv")
     pd.DataFrame(val_preds_dict_lear).to_csv(val_pred_dir / "lear.csv")
-    pd.DataFrame(test_preds_dict_lear).to_csv(test_pred_dir / "lear.csv")
 
-    # Macro-averages
-    logger.info("\n========== MACRO AVERAGES ACROSS ZONES ==========")
-    if zone_mae_naive:
-        avg_mae_naive = np.mean(list(zone_mae_naive.values()))
-        logger.info(f"[NAIVE 168h Baseline] Avg MAE: {avg_mae_naive:.3f} EUR/MWh")
-    if zone_mae_lear:
-        avg_mae_lear = np.mean(list(zone_mae_lear.values()))
-        logger.info(f"[LEAR LassoLarsIC] Avg MAE: {avg_mae_lear:.3f} EUR/MWh")
-    logger.info("================================================")
+    # Kaggle test prediction block: fit on all labeled data and predict x_test.
+    try:
+        logger.info("Loading Kaggle test features...")
+        df_kaggle_test = load_competition_data(mode="test")
+        df_kaggle_test = apply_full_feature_engineering(df_kaggle_test)
+
+        missing_test_features = [
+            c for c in feature_cols if c not in df_kaggle_test.columns
+        ]
+        if missing_test_features:
+            logger.warning(
+                "Adding %s missing test features with ones for schema alignment",
+                len(missing_test_features),
+            )
+            for col in missing_test_features:
+                df_kaggle_test[col] = 1.0
+
+        full_train_s, _, kaggle_test_s, _, _ = scale_data(
+            df_train,
+            None,
+            df_kaggle_test,
+        )
+        if kaggle_test_s is None:
+            raise ValueError("Scaled Kaggle test features are missing")
+
+        X_train_full = full_train_s[feature_cols]
+        X_test_kaggle = kaggle_test_s[feature_cols]
+        X_full_submit = pd.concat([X_train_full, X_test_kaggle]).sort_index()
+
+        test_preds_dict_lear: dict[str, pd.Series] = {}
+        for target_col in target_cols:
+            y_train_full_raw = df_train[target_col].sort_index()
+            test_preds_dict_lear[target_col] = predict_lear(
+                X_full_submit,
+                y_train_full_raw,
+                pd.DatetimeIndex(X_test_kaggle.index),
+                calibration_window_days=calibration_window,
+                alpha=alpha,
+            )
+
+        config_abs_path = Path("config.yaml").resolve()
+        raw_dir = config_abs_path.parent / config["data"]["raw_dir"]
+        x_test_ids = pd.read_csv(
+            raw_dir / config["data"]["test_features_file"], usecols=["id"]
+        )["id"]
+        if len(x_test_ids) != len(X_test_kaggle):
+            raise ValueError(
+                "Kaggle id length mismatch between raw x_test and engineered test features"
+            )
+
+        lear_test_df = pd.DataFrame(
+            {col: test_preds_dict_lear[col].to_numpy() for col in target_cols},
+            index=x_test_ids.to_numpy(),
+        )
+        lear_test_df.index.name = "id"
+        lear_test_df.to_csv(test_pred_dir / "lear.csv")
+        stale_naive_path = test_pred_dir / "naive.csv"
+        if stale_naive_path.exists():
+            stale_naive_path.unlink()
+            logger.info("Removed stale test prediction file: %s", stale_naive_path)
+        logger.info("Saved Kaggle test predictions to %s", test_pred_dir)
+
+    except FileNotFoundError:
+        logger.warning(
+            "Kaggle test file not found. Skipping test prediction generation."
+        )

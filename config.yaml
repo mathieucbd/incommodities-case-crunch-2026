@@ -15,8 +15,8 @@ data:
     - "uk_emission"
   splits:
     train_start: "2022-07-01"
-    val_start: "2024-05-01"
-    test_start: "2024-07-01"
+    val_start: "2024-02-01"  # This creates the ~80/20 split
+    test_start: "2024-07-01" # Keep this to transition to Kaggle x_test
 
 pipeline:
   global_seed: 42
@@ -30,6 +30,38 @@ model_settings:
   # Baseline (LEAR) settings
   lear:
     calibration_window: 56
+
+  # Tree model defaults (used for training and as tuning baselines)
+  trees:
+    lightgbm:
+      n_estimators: 1500
+      learning_rate: 0.05
+      num_leaves: 64
+      subsample: 0.8
+      colsample_bytree: 0.8
+      early_stopping_rounds: 100
+      objective: "regression"
+      use_missing: true
+    xgboost:
+      n_estimators: 1500
+      learning_rate: 0.05
+      max_depth: 6
+      subsample: 0.8
+      colsample_bytree: 0.8
+      early_stopping_rounds: 100
+      enable_categorical: true
+    catboost:
+      n_estimators: 1500
+      learning_rate: 0.05
+      depth: 8
+      l2_leaf_reg: 3.0
+      random_strength: 1.0
+      early_stopping_rounds: 100
+      loss_function: "RMSE"
+    random_forest:
+      n_estimators: 500
+      max_depth: 15
+      min_samples_split: 10
     
   # Deep Learning Structural Settings (Weights are now in artifact)
   dnn:
