@@ -1,5 +1,5 @@
 [project]
-name = "incomo3"
+name = "incommodities-case-crunch-2026"
 version = "0.1.0"
 description = "InCommodities Case Crunch 2026 - Electricity Price Forecasting (FR + UK)"
 requires-python = ">=3.10"
