@@ -16,4 +16,6 @@ dependencies = [
     "holidays>=0.40",
     "jupyter>=1.0",
     "ipykernel>=6.25",
+    "torch>=2.11.0",
+    "xgboost>=3.2.0",
 ]
