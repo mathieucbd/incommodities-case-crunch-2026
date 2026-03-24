@@ -1,98 +1,72 @@
+data:
+  raw_dir: "data/raw"
+  output_dir: "outputs"
+
+targets:
+  - fr_spot
+  - uk_spot
+
+validation:
+  strategy: "holdout"
+  holdout_start: "2024-02-01"
+  n_splits: 3
+
+models:
+  catboost:
+    loss_function: "RMSE"
+    eval_metric: "RMSE"
+    iterations: 5000
+    learning_rate: 0.03
+    depth: 8
+    l2_leaf_reg: 5
+    subsample: 0.8
+    early_stopping_rounds: 100
+    random_seed: 42
+    optuna_trials: 80
+
+  lightgbm:
+    objective: "regression_l1"
+    metric: "rmse"
+    n_estimators: 3000
+    learning_rate: 0.05
+    num_leaves: 63
+    feature_fraction: 0.7
+    bagging_fraction: 0.8
+    bagging_freq: 5
+    min_child_samples: 20
+    early_stopping_rounds: 100
+
+ensemble:
+  method: "ridge"
+  alpha_search: [0.01, 0.1, 1.0, 10.0, 100.0]
+
+postprocessing:
+  clip_lower_quantile: 0.001
+  clip_upper_quantile: 0.999
+  hourly_bias_correction: true
+
 feature_engineering:
-  gas_efficiency: 0.50          # CCGT baseline efficiency
-  emission_factor: 0.37         # tCO2/MWh of gas burned
-  ocgt_efficiency: 0.40         # OCGT peaker efficiency
-  ccgt_efficiency: 0.55         # CCGT modern efficiency
-  nuclear_marginal_cost: 12.0   # EUR/MWh nuclear short-run marginal cost
-  transport_cost_approx: 2.0    # EUR/MWh cross-border transport cost proxy
-  river_hot_threshold_fr: 25.0  # °C above which FR nuclear derating kicks in
-  river_hot_threshold_de: 23.0  # °C above which DE thermal derating kicks in
-  nuclear_low_threshold: 35000  # MW below = FR nuclear "low"
+  daily_cols:
+    - de_gas
+    - es_gas
+    - fr_gas
+    - nl_gas
+    - uk_gas
+    - eu_emission
+    - uk_emission
+  gas_efficiency: 0.50
+  emission_factor: 0.37
+  river_hot_threshold_fr: 25.0
+  river_hot_threshold_de: 23.0
+  nuclear_low_threshold: 35000
   nuclear_very_low_threshold: 25000
   uk_wind_high_threshold: 0.50
   uk_wind_very_high_threshold: 0.65
   scarcity_critical_threshold: 0.85
   scarcity_extreme_threshold: 0.95
-  jump_threshold: 50.0          # EUR/MWh change defining a "price jump"
-  scarcity_barrier_power: 1.5   # exponent for convex merit-order barrier
-
-data:
-  raw_dir: "data/raw"
-  features_file: "x_train.csv"
-  targets_file: "y_train.csv"
-  test_features_file: "x_test.csv"
-  target_cols: ["fr_spot", "uk_spot"]
-  index_col: "datetime_CET"
-  sparse_daily_features: 
-    - "de_gas"
-    - "es_gas"
-    - "fr_gas"
-    - "nl_gas"
-    - "uk_gas"
-    - "eu_emission"
-    - "uk_emission"
-  splits:
-    train_start: "2022-07-01"
-    val_start: "2024-02-01"  # This creates the ~80/20 split
-    test_start: "2024-07-01" # Keep this to transition to Kaggle x_test
-
-pipeline:
-  global_seed: 42
-
-model_settings:
-  # Hyperparameter Optimization settings
-  hyperopt:
-    max_evals: 50
-    trials_dir: "data/outputs/trials/"
-
-  # Baseline (LEAR) settings
-  lear:
-    calibration_window: 56
-
-  # Tree model defaults (used for training and as tuning baselines)
-  trees:
-    lightgbm:
-      n_estimators: 1500
-      learning_rate: 0.05
-      num_leaves: 64
-      subsample: 0.8
-      colsample_bytree: 0.8
-      early_stopping_rounds: 100
-      objective: "regression"
-      use_missing: true
-    xgboost:
-      n_estimators: 1500
-      learning_rate: 0.05
-      max_depth: 6
-      subsample: 0.8
-      colsample_bytree: 0.8
-      early_stopping_rounds: 100
-      enable_categorical: true
-    catboost:
-      n_estimators: 1500
-      learning_rate: 0.05
-      depth: 8
-      l2_leaf_reg: 3.0
-      random_strength: 1.0
-      early_stopping_rounds: 100
-      loss_function: "RMSE"
-    random_forest:
-      n_estimators: 500
-      max_depth: 15
-      min_samples_split: 10
-    
-  # Deep Learning Structural Settings (Weights are now in artifact)
-  dnn:
-    use_data_augmentation: True
-    validation_split: 0.2
-    top_k_features: 40
-
-  # Ensemble (QRA) Settings
-  qra:
-    quantiles: [0.05, 0.50, 0.95]
-    alpha_winkler: 0.1
-    # We keep QRA tree settings hardcoded here as we didn't run Bayesian tuning on the meta-learner
-    n_estimators: 500
-    learning_rate: 0.05
-    num_leaves: 31
-    min_child_samples: 20
+  jump_threshold: 50.0
+  ocgt_efficiency: 0.40
+  ccgt_efficiency: 0.55
+  nuclear_marginal_cost: 12.0
+  transport_cost_approx: 2.0
+  scarcity_barrier_power: 1.5

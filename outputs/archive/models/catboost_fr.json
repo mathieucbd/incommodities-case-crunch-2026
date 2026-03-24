@@ -1,0 +1,13 @@
+{
+  "target": "fr_spot",
+  "best_params": {
+    "depth": 9,
+    "learning_rate": 0.06982495078458271,
+    "l2_leaf_reg": 1.6556251889929818,
+    "subsample": 0.6384385335477671,
+    "min_data_in_leaf": 76,
+    "random_strength": 1.510235477251555,
+    "bagging_temperature": 0.44463756064579735
+  },
+  "n_features": 30
+}

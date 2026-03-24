@@ -1,0 +1,167 @@
+{
+  "A) raw spot (baseline)": {
+    "fr_rmse": 27.51957456117766,
+    "fr_bias": -19.10594255244708,
+    "fr_iters": 1271,
+    "fr_nfeat": 20,
+    "uk_rmse": 10.445391699283284,
+    "uk_bias": -0.9404771878634763,
+    "uk_iters": 1046,
+    "uk_nfeat": 75,
+    "combined": 18.98248313023047
+  },
+  "B) arcsinh(spot)": {
+    "fr_rmse": 26.097219308293987,
+    "fr_bias": -17.203278557426003,
+    "fr_iters": 537,
+    "fr_nfeat": 20,
+    "uk_rmse": 10.747053951196962,
+    "uk_bias": -0.9052708278829429,
+    "uk_iters": 667,
+    "uk_nfeat": 75,
+    "combined": 18.422136629745474
+  },
+  "C) basis v1 (merit_order)": {
+    "fr_rmse": 27.629572494025965,
+    "fr_bias": -18.89804279570636,
+    "fr_iters": 1356,
+    "fr_nfeat": 20,
+    "uk_rmse": 9.866441593729096,
+    "uk_bias": -0.18504415078753422,
+    "uk_iters": 1255,
+    "uk_nfeat": 75,
+    "combined": 18.74800704387753
+  },
+  "D) basis v2 (opportunity_cost)": {
+    "fr_rmse": 30.32693202581294,
+    "fr_bias": -5.316967441875367,
+    "fr_iters": 97,
+    "fr_nfeat": 20,
+    "uk_rmse": 16.255431478362716,
+    "uk_bias": 2.5698470854257645,
+    "uk_iters": 1742,
+    "uk_nfeat": 75,
+    "combined": 23.29118175208783
+  },
+  "E) arcsinh(basis v2)": {
+    "fr_rmse": 31.710931534743203,
+    "fr_bias": 6.881231952908239,
+    "fr_iters": 59,
+    "fr_nfeat": 20,
+    "uk_rmse": 20.205123241117565,
+    "uk_bias": 4.973898708204811,
+    "uk_iters": 520,
+    "uk_nfeat": 75,
+    "combined": 25.958027387930386
+  },
+  "F) raw spot + Cat32": {
+    "fr_rmse": 26.45593873711028,
+    "fr_bias": -17.485737283259034,
+    "fr_iters": 1662,
+    "fr_nfeat": 31,
+    "uk_rmse": 10.297042107814017,
+    "uk_bias": -0.9225552861199738,
+    "uk_iters": 975,
+    "uk_nfeat": 85,
+    "combined": 18.376490422462147
+  },
+  "G) arcsinh(spot) + Cat32": {
+    "fr_rmse": 24.785945641232534,
+    "fr_bias": -14.878541595930223,
+    "fr_iters": 903,
+    "fr_nfeat": 31,
+    "uk_rmse": 10.870028888541555,
+    "uk_bias": 0.1294157945839256,
+    "uk_iters": 682,
+    "uk_nfeat": 85,
+    "combined": 17.827987264887042
+  },
+  "H) basis v2 + Cat32": {
+    "fr_rmse": 25.61348721360187,
+    "fr_bias": -16.061256345331763,
+    "fr_iters": 383,
+    "fr_nfeat": 31,
+    "uk_rmse": 11.0561749989278,
+    "uk_bias": -0.023253805388073884,
+    "uk_iters": 1284,
+    "uk_nfeat": 85,
+    "combined": 18.334831106264836
+  },
+  "I) raw spot + weights(1.0)": {
+    "fr_rmse": 27.81755843575759,
+    "fr_bias": -19.52658676240427,
+    "fr_iters": 1022,
+    "fr_nfeat": 20,
+    "uk_rmse": 10.561401735436393,
+    "uk_bias": -1.392161126888461,
+    "uk_iters": 952,
+    "uk_nfeat": 75,
+    "combined": 19.18948008559699
+  },
+  "J) arcsinh(spot) + weights(1.0)": {
+    "fr_rmse": 25.422433110932083,
+    "fr_bias": -16.40498542600661,
+    "fr_iters": 478,
+    "fr_nfeat": 20,
+    "uk_rmse": 10.597183823596314,
+    "uk_bias": -0.6201169748914491,
+    "uk_iters": 974,
+    "uk_nfeat": 75,
+    "combined": 18.0098084672642
+  },
+  "K) raw spot + weights(2.0)": {
+    "fr_rmse": 27.776187537592655,
+    "fr_bias": -19.571890329383333,
+    "fr_iters": 736,
+    "fr_nfeat": 20,
+    "uk_rmse": 10.475764015835285,
+    "uk_bias": -1.1847178758898713,
+    "uk_iters": 1797,
+    "uk_nfeat": 75,
+    "combined": 19.12597577671397
+  },
+  "L) arcsinh(spot) + weights(2.0)": {
+    "fr_rmse": 25.259506584059057,
+    "fr_bias": -16.24627685793861,
+    "fr_iters": 412,
+    "fr_nfeat": 20,
+    "uk_rmse": 10.785504478887086,
+    "uk_bias": -0.22438234585819547,
+    "uk_iters": 1316,
+    "uk_nfeat": 75,
+    "combined": 18.022505531473072
+  },
+  "M) arcsinh + Cat32 + w(1.0)": {
+    "fr_rmse": 25.25295966452202,
+    "fr_bias": -15.476147867966908,
+    "fr_iters": 383,
+    "fr_nfeat": 31,
+    "uk_rmse": 10.918459832757511,
+    "uk_bias": 0.3469319366221697,
+    "uk_iters": 916,
+    "uk_nfeat": 85,
+    "combined": 18.085709748639765
+  },
+  "N) arcsinh + Cat32 + w(2.0)": {
+    "fr_rmse": 24.452253783210278,
+    "fr_bias": -14.642957354497707,
+    "fr_iters": 282,
+    "fr_nfeat": 31,
+    "uk_rmse": 10.91195203649938,
+    "uk_bias": 0.08925078226136597,
+    "uk_iters": 804,
+    "uk_nfeat": 85,
+    "combined": 17.68210290985483
+  },
+  "O) basis v2 + Cat32 + w(1.0)": {
+    "fr_rmse": 25.087762835236667,
+    "fr_bias": -15.633831258934196,
+    "fr_iters": 335,
+    "fr_nfeat": 31,
+    "uk_rmse": 11.270569056681287,
+    "uk_bias": -0.5983708633914492,
+    "uk_iters": 1015,
+    "uk_nfeat": 85,
+    "combined": 18.179165945958978
+  }
+}

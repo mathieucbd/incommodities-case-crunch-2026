@@ -1,0 +1,206 @@
+{
+  "fr": {
+    "approach": "stationary_ema240h_v8_newfeats",
+    "catboost_rmse": 16.79081444697727,
+    "catboost_rmse_hbc": 16.64082566360655,
+    "lightgbm_rmse": 17.637832586185574,
+    "regime_ensemble_rmse": 15.812029943282644,
+    "final_rmse_hbc": 15.695179450771015,
+    "regime_weights": {
+      "night": {
+        "CB": 0.0,
+        "LGB": 0.6,
+        "XGB": 0.0,
+        "EN": 0.1,
+        "DNN": 0.3
+      },
+      "morning": {
+        "CB": 0.0,
+        "LGB": 0.0,
+        "XGB": 0.0,
+        "EN": 0.3,
+        "DNN": 0.7
+      },
+      "day": {
+        "CB": 0.1,
+        "LGB": 0.2,
+        "XGB": 0.0,
+        "EN": 0.4,
+        "DNN": 0.3
+      },
+      "peak": {
+        "CB": 0.1,
+        "LGB": 0.0,
+        "XGB": 0.0,
+        "EN": 0.5,
+        "DNN": 0.4
+      },
+      "late": {
+        "CB": 0.5,
+        "LGB": 0.1,
+        "XGB": 0.0,
+        "EN": 0.0,
+        "DNN": 0.4
+      }
+    },
+    "features": [
+      "fr_spot_la_roll_168h_mean",
+      "fr_residual_zscore_14d",
+      "uk_residual_zscore_14d",
+      "fr_spot_la_deviation_168h",
+      "continental_residual_load",
+      "euro_scarcity_ratio",
+      "wind_nuke_deviation_gap",
+      "fr_residual_change_24h",
+      "uk_spot_la_deviation_168h",
+      "uk_price_per_mw_7d",
+      "uk_spot_la_roll_168h_std",
+      "fr_spot_la_deviation_24h",
+      "fr_residual_ramp_3h",
+      "de_residual_load",
+      "fr_load_roll_168h_mean",
+      "carbon_to_gas_ratio",
+      "fr_mean_reversion_strength",
+      "uk_load_change_24h",
+      "uk_spot_la_roll_168h_mean",
+      "doy_cos",
+      "fr_spot_la_roll_168h_std",
+      "fr_dynamic_marginal",
+      "de_gas",
+      "uk_nuclear_avail_ratio",
+      "uk_load_roll_168h_mean",
+      "ntc_dk1-uk_f",
+      "fr_gas_roll_168h_mean",
+      "X_fr_spot_la_roll_168h_mean_x_uk_price_per_mw_7d",
+      "fr_spot_la_roll_336h_mean",
+      "fr_spot_la_roll_336h_std",
+      "fr_stress_index",
+      "fr_load_surprise"
+    ],
+    "params": {
+      "loss_function": "RMSE",
+      "eval_metric": "RMSE",
+      "iterations": 15000,
+      "learning_rate": 0.059,
+      "depth": 3,
+      "l2_leaf_reg": 4.42,
+      "subsample": 0.533,
+      "colsample_bylevel": 0.228,
+      "min_child_samples": 14,
+      "random_strength": 0.9,
+      "random_seed": 42,
+      "use_best_model": true
+    }
+  },
+  "uk": {
+    "approach": "basis_12m",
+    "catboost_rmse": 10.123645102217866,
+    "catboost_rmse_hbc": 9.941030313024601,
+    "lightgbm_rmse": 10.41611173216509,
+    "regime_ensemble_rmse": 9.552765659163672,
+    "final_rmse_hbc": 9.453943315824231,
+    "regime_weights": {
+      "night": {
+        "CB": 0.5,
+        "LGB": 0.0,
+        "XGB": 0.0,
+        "EN": 0.4,
+        "DNN": 0.1
+      },
+      "morning": {
+        "CB": 0.6,
+        "LGB": 0.0,
+        "XGB": 0.0,
+        "EN": 0.1,
+        "DNN": 0.3
+      },
+      "day": {
+        "CB": 0.0,
+        "LGB": 0.4,
+        "XGB": 0.4,
+        "EN": 0.0,
+        "DNN": 0.2
+      },
+      "peak": {
+        "CB": 0.3,
+        "LGB": 0.4,
+        "XGB": 0.1,
+        "EN": 0.0,
+        "DNN": 0.2
+      },
+      "late": {
+        "CB": 1.0,
+        "LGB": 0.0,
+        "XGB": 0.0,
+        "EN": 0.0,
+        "DNN": 0.0
+      }
+    },
+    "n_features": 154,
+    "params": {
+      "loss_function": "MAE",
+      "eval_metric": "RMSE",
+      "iterations": 15000,
+      "learning_rate": 0.03,
+      "depth": 8,
+      "l2_leaf_reg": 5,
+      "colsample_bylevel": 0.8,
+      "subsample": 0.8,
+      "random_seed": 42,
+      "use_best_model": true
+    }
+  },
+  "combined_sum_hbc": 25.149122766595248,
+  "hbc_fr": {
+    "0": 0.8945726655845252,
+    "1": 0.9683858544043769,
+    "2": 1.6788243768565234,
+    "3": 0.8228021642177421,
+    "4": -0.8691598913405915,
+    "5": 0.038105271465823404,
+    "6": 1.9218419924661763,
+    "7": 3.6932590227310356,
+    "8": 2.756393211995713,
+    "9": -0.6113890885790368,
+    "10": -2.3428295533353576,
+    "11": -2.44091296350932,
+    "12": -1.6934042231531492,
+    "13": -2.2352413390947903,
+    "14": -1.3223915886626234,
+    "15": -0.5304439117346684,
+    "16": -0.23486288150905726,
+    "17": -1.0887550049100374,
+    "18": -3.116143407822712,
+    "19": -1.642846845990603,
+    "20": -1.9624445269206026,
+    "21": 1.7520035892018526,
+    "22": 3.4930307708032324,
+    "23": 1.7161663667552705
+  },
+  "hbc_uk": {
+    "0": -1.832266751376732,
+    "1": -0.7072562865808736,
+    "2": -0.0010186947436931367,
+    "3": 0.2904035986997439,
+    "4": 0.2811456217537012,
+    "5": -0.6567413017755982,
+    "6": -2.033711591698353,
+    "7": -0.47093955243155206,
+    "8": -1.6892112424353696,
+    "9": 0.7020939226081192,
+    "10": 0.9332063504121952,
+    "11": 1.2101210691677937,
+    "12": 1.7095828459399767,
+    "13": 3.012973678687769,
+    "14": 0.9883204642700806,
+    "15": 0.5307772955418592,
+    "16": -0.4195207719656886,
+    "17": -0.27753364782371565,
+    "18": 0.09322635156639925,
+    "19": 1.6111235812254643,
+    "20": 2.2711161560851174,
+    "21": 1.8956094930284524,
+    "22": 0.17826422448620638,
+    "23": -2.3822795837700728
+  }
+}

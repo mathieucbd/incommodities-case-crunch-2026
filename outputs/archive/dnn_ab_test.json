@@ -1,0 +1,218 @@
+[
+  {
+    "market": "FR",
+    "config": "small_2L_mse",
+    "rmse": 19.192147769057975,
+    "rmse_hbc": 18.469442515162747,
+    "epochs": 40,
+    "params": 53505,
+    "time": 13.176216840744019
+  },
+  {
+    "market": "FR",
+    "config": "small_2L_huber",
+    "rmse": 17.17971200216857,
+    "rmse_hbc": 16.908098107714917,
+    "epochs": 38,
+    "params": 53505,
+    "time": 10.30281114578247
+  },
+  {
+    "market": "FR",
+    "config": "med_2L_mse",
+    "rmse": 18.823000683946006,
+    "rmse_hbc": 18.57218669771443,
+    "epochs": 37,
+    "params": 123393,
+    "time": 10.693830013275146
+  },
+  {
+    "market": "FR",
+    "config": "med_2L_huber",
+    "rmse": 16.996922662211716,
+    "rmse_hbc": 16.64175806378532,
+    "epochs": 34,
+    "params": 123393,
+    "time": 9.323463916778564
+  },
+  {
+    "market": "FR",
+    "config": "med_3L_mse",
+    "rmse": 18.37460834753846,
+    "rmse_hbc": 18.175511980571923,
+    "epochs": 49,
+    "params": 131713,
+    "time": 16.440092086791992
+  },
+  {
+    "market": "FR",
+    "config": "med_3L_huber",
+    "rmse": 17.07556304835621,
+    "rmse_hbc": 16.923065311783837,
+    "epochs": 38,
+    "params": 131713,
+    "time": 12.733305931091309
+  },
+  {
+    "market": "FR",
+    "config": "large_3L_mse",
+    "rmse": 18.128357010159515,
+    "rmse_hbc": 17.837970500654357,
+    "epochs": 39,
+    "params": 345345,
+    "time": 13.791330814361572
+  },
+  {
+    "market": "FR",
+    "config": "large_3L_huber",
+    "rmse": 17.52178080526715,
+    "rmse_hbc": 17.216122199022838,
+    "epochs": 34,
+    "params": 345345,
+    "time": 11.762501239776611
+  },
+  {
+    "market": "FR",
+    "config": "selu_3L_mse",
+    "rmse": 24.458572602423448,
+    "rmse_hbc": 22.984125697634642,
+    "epochs": 31,
+    "params": 130817,
+    "time": 8.370725870132446
+  },
+  {
+    "market": "FR",
+    "config": "selu_3L_huber",
+    "rmse": 27.523547649339065,
+    "rmse_hbc": 25.176824800372078,
+    "epochs": 31,
+    "params": 130817,
+    "time": 8.190893173217773
+  },
+  {
+    "market": "FR",
+    "config": "gelu_3L_mse",
+    "rmse": 18.347911423052416,
+    "rmse_hbc": 17.89281719191195,
+    "epochs": 42,
+    "params": 131713,
+    "time": 14.163417100906372
+  },
+  {
+    "market": "FR",
+    "config": "gelu_3L_huber",
+    "rmse": 17.20926312542507,
+    "rmse_hbc": 16.92775824612135,
+    "epochs": 37,
+    "params": 131713,
+    "time": 12.404152870178223
+  },
+  {
+    "market": "UK",
+    "config": "small_2L_mse",
+    "rmse": 12.803090817479161,
+    "rmse_hbc": 12.056461876261324,
+    "epochs": 48,
+    "params": 53505,
+    "time": 12.899716854095459
+  },
+  {
+    "market": "UK",
+    "config": "small_2L_huber",
+    "rmse": 12.128128225906064,
+    "rmse_hbc": 11.572999842213651,
+    "epochs": 49,
+    "params": 53505,
+    "time": 13.201772928237915
+  },
+  {
+    "market": "UK",
+    "config": "med_2L_mse",
+    "rmse": 11.902562136607296,
+    "rmse_hbc": 11.279061766826958,
+    "epochs": 61,
+    "params": 123393,
+    "time": 16.71943998336792
+  },
+  {
+    "market": "UK",
+    "config": "med_2L_huber",
+    "rmse": 11.851010041413623,
+    "rmse_hbc": 11.169230971899324,
+    "epochs": 55,
+    "params": 123393,
+    "time": 15.086884021759033
+  },
+  {
+    "market": "UK",
+    "config": "med_3L_mse",
+    "rmse": 11.422363816992563,
+    "rmse_hbc": 11.207920582942569,
+    "epochs": 52,
+    "params": 131713,
+    "time": 17.49517583847046
+  },
+  {
+    "market": "UK",
+    "config": "med_3L_huber",
+    "rmse": 11.533518688836473,
+    "rmse_hbc": 11.09645969925026,
+    "epochs": 57,
+    "params": 131713,
+    "time": 19.174067974090576
+  },
+  {
+    "market": "UK",
+    "config": "large_3L_mse",
+    "rmse": 11.652860987996617,
+    "rmse_hbc": 11.280930385183833,
+    "epochs": 49,
+    "params": 345345,
+    "time": 16.96870183944702
+  },
+  {
+    "market": "UK",
+    "config": "large_3L_huber",
+    "rmse": 11.45593115165364,
+    "rmse_hbc": 10.972913451428086,
+    "epochs": 44,
+    "params": 345345,
+    "time": 15.435460805892944
+  },
+  {
+    "market": "UK",
+    "config": "selu_3L_mse",
+    "rmse": 15.892372889200091,
+    "rmse_hbc": 15.427736920472267,
+    "epochs": 31,
+    "params": 130817,
+    "time": 8.231658935546875
+  },
+  {
+    "market": "UK",
+    "config": "selu_3L_huber",
+    "rmse": 13.531077713052433,
+    "rmse_hbc": 12.923617587477379,
+    "epochs": 31,
+    "params": 130817,
+    "time": 8.243828058242798
+  },
+  {
+    "market": "UK",
+    "config": "gelu_3L_mse",
+    "rmse": 11.614973071566704,
+    "rmse_hbc": 11.112269158732442,
+    "epochs": 43,
+    "params": 131713,
+    "time": 14.499651193618774
+  },
+  {
+    "market": "UK",
+    "config": "gelu_3L_huber",
+    "rmse": 11.187498570656743,
+    "rmse_hbc": 10.976643347261321,
+    "epochs": 68,
+    "params": 131713,
+    "time": 22.806010961532593
+  }
+]

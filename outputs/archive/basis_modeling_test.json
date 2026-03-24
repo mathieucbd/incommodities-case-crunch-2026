@@ -1,0 +1,270 @@
+{
+  "fr": [
+    {
+      "anchor": "EMA_240 (current)",
+      "rmse_raw": 17.46,
+      "rmse_hbc": 17.05,
+      "rmse_mhbc": 16.73,
+      "mean_bias": 3.07,
+      "basis_mean_tr": -2.76,
+      "basis_std_tr": 71.39,
+      "basis_mean_va": -1.37,
+      "time": 1.4
+    },
+    {
+      "anchor": "EMA_240 (current) + arcsinh",
+      "rmse_raw": 20.9,
+      "rmse_hbc": 19.34,
+      "rmse_mhbc": 18.57,
+      "mean_bias": 2.37,
+      "basis_mean_tr": -2.76,
+      "basis_std_tr": 71.39,
+      "basis_mean_va": -1.37,
+      "time": 1.3
+    },
+    {
+      "anchor": "merit_order_cost",
+      "rmse_raw": 30.21,
+      "rmse_hbc": 21.6,
+      "rmse_mhbc": 18.07,
+      "mean_bias": 20.69,
+      "basis_mean_tr": -9.67,
+      "basis_std_tr": 72.68,
+      "basis_mean_va": -50.49,
+      "time": 1.3
+    },
+    {
+      "anchor": "merit_order_cost + arcsinh",
+      "rmse_raw": 38.5,
+      "rmse_hbc": 24.63,
+      "rmse_mhbc": 17.74,
+      "mean_bias": 29.34,
+      "basis_mean_tr": -9.67,
+      "basis_std_tr": 72.68,
+      "basis_mean_va": -50.49,
+      "time": 1.3
+    },
+    {
+      "anchor": "dynamic_marginal",
+      "rmse_raw": 28.24,
+      "rmse_hbc": 21.57,
+      "rmse_mhbc": 17.69,
+      "mean_bias": 18.04,
+      "basis_mean_tr": -6.44,
+      "basis_std_tr": 70.41,
+      "basis_mean_va": -41.99,
+      "time": 1.3
+    },
+    {
+      "anchor": "dynamic_marginal + arcsinh",
+      "rmse_raw": 35.91,
+      "rmse_hbc": 22.85,
+      "rmse_mhbc": 17.52,
+      "mean_bias": 27.51,
+      "basis_mean_tr": -6.44,
+      "basis_std_tr": 70.41,
+      "basis_mean_va": -41.99,
+      "time": 1.2
+    },
+    {
+      "anchor": "opportunity_cost",
+      "rmse_raw": 29.68,
+      "rmse_hbc": 28.46,
+      "rmse_mhbc": 25.66,
+      "mean_bias": -6.83,
+      "basis_mean_tr": 77.98,
+      "basis_std_tr": 121.5,
+      "basis_mean_va": 12.92,
+      "time": 1.3
+    },
+    {
+      "anchor": "opportunity_cost + arcsinh",
+      "rmse_raw": 32.92,
+      "rmse_hbc": 30.65,
+      "rmse_mhbc": 27.42,
+      "mean_bias": -10.86,
+      "basis_mean_tr": 77.98,
+      "basis_std_tr": 121.5,
+      "basis_mean_va": 12.92,
+      "time": 1.3
+    },
+    {
+      "anchor": "scarcity_barrier",
+      "rmse_raw": 7176.52,
+      "rmse_hbc": 5202.35,
+      "rmse_mhbc": 4792.3,
+      "mean_bias": -4640.57,
+      "basis_mean_tr": -35505.93,
+      "basis_std_tr": 39552.1,
+      "basis_mean_va": -3600.38,
+      "time": 1.3
+    },
+    {
+      "anchor": "scarcity_barrier + arcsinh",
+      "rmse_raw": 5150.58,
+      "rmse_hbc": 4894.53,
+      "rmse_mhbc": 4436.8,
+      "mean_bias": -1316.19,
+      "basis_mean_tr": -35505.93,
+      "basis_std_tr": 39552.1,
+      "basis_mean_va": -3600.38,
+      "time": 1.3
+    },
+    {
+      "anchor": "spark_spread",
+      "rmse_raw": 31.18,
+      "rmse_hbc": 22.6,
+      "rmse_mhbc": 18.34,
+      "mean_bias": 21.02,
+      "basis_mean_tr": 17.36,
+      "basis_std_tr": 84.61,
+      "basis_mean_va": -42.3,
+      "time": 1.3
+    },
+    {
+      "anchor": "spark_spread + arcsinh",
+      "rmse_raw": 32.73,
+      "rmse_hbc": 23.91,
+      "rmse_mhbc": 20.56,
+      "mean_bias": 22.04,
+      "basis_mean_tr": 17.36,
+      "basis_std_tr": 84.61,
+      "basis_mean_va": -42.3,
+      "time": 1.3
+    }
+  ],
+  "uk": [
+    {
+      "anchor": "merit_order_cost (current)",
+      "rmse_raw": 10.7,
+      "rmse_hbc": 10.46,
+      "rmse_mhbc": 9.68,
+      "mean_bias": 1.49,
+      "basis_mean_tr": 13.36,
+      "basis_std_tr": 52.21,
+      "basis_mean_va": -0.28,
+      "time": 3.9
+    },
+    {
+      "anchor": "merit_order_cost (current) + arcsinh",
+      "rmse_raw": 17.95,
+      "rmse_hbc": 17.71,
+      "rmse_mhbc": 16.96,
+      "mean_bias": -1.14,
+      "basis_mean_tr": 13.36,
+      "basis_std_tr": 52.21,
+      "basis_mean_va": -0.28,
+      "time": 3.9
+    },
+    {
+      "anchor": "dynamic_marginal",
+      "rmse_raw": 10.96,
+      "rmse_hbc": 10.58,
+      "rmse_mhbc": 10.11,
+      "mean_bias": 1.75,
+      "basis_mean_tr": 50.37,
+      "basis_std_tr": 53.04,
+      "basis_mean_va": 29.26,
+      "time": 3.9
+    },
+    {
+      "anchor": "dynamic_marginal + arcsinh",
+      "rmse_raw": 12.74,
+      "rmse_hbc": 12.57,
+      "rmse_mhbc": 12.23,
+      "mean_bias": 0.27,
+      "basis_mean_tr": 50.37,
+      "basis_std_tr": 53.04,
+      "basis_mean_va": 29.26,
+      "time": 3.9
+    },
+    {
+      "anchor": "opportunity_cost",
+      "rmse_raw": 11.48,
+      "rmse_hbc": 11.31,
+      "rmse_mhbc": 10.92,
+      "mean_bias": -0.39,
+      "basis_mean_tr": 58.8,
+      "basis_std_tr": 56.5,
+      "basis_mean_va": 43.62,
+      "time": 3.9
+    },
+    {
+      "anchor": "opportunity_cost + arcsinh",
+      "rmse_raw": 16.56,
+      "rmse_hbc": 15.94,
+      "rmse_mhbc": 15.54,
+      "mean_bias": -3.72,
+      "basis_mean_tr": 58.8,
+      "basis_std_tr": 56.5,
+      "basis_mean_va": 43.62,
+      "time": 3.8
+    },
+    {
+      "anchor": "scarcity_barrier",
+      "rmse_raw": 244.65,
+      "rmse_hbc": 234.57,
+      "rmse_mhbc": 218.62,
+      "mean_bias": -44.17,
+      "basis_mean_tr": -6751.76,
+      "basis_std_tr": 20770.16,
+      "basis_mean_va": -891.66,
+      "time": 3.8
+    },
+    {
+      "anchor": "scarcity_barrier + arcsinh",
+      "rmse_raw": 214.96,
+      "rmse_hbc": 213.15,
+      "rmse_mhbc": 200.96,
+      "mean_bias": -1.08,
+      "basis_mean_tr": -6751.76,
+      "basis_std_tr": 20770.16,
+      "basis_mean_va": -891.66,
+      "time": 3.9
+    },
+    {
+      "anchor": "spark_spread",
+      "rmse_raw": 11.06,
+      "rmse_hbc": 10.63,
+      "rmse_mhbc": 9.91,
+      "mean_bias": 2.26,
+      "basis_mean_tr": 21.74,
+      "basis_std_tr": 64.36,
+      "basis_mean_va": -0.08,
+      "time": 3.9
+    },
+    {
+      "anchor": "spark_spread + arcsinh",
+      "rmse_raw": 17.05,
+      "rmse_hbc": 16.88,
+      "rmse_mhbc": 16.21,
+      "mean_bias": 0.57,
+      "basis_mean_tr": 21.74,
+      "basis_std_tr": 64.36,
+      "basis_mean_va": -0.08,
+      "time": 3.9
+    },
+    {
+      "anchor": "EMA_240",
+      "rmse_raw": 11.24,
+      "rmse_hbc": 10.88,
+      "rmse_mhbc": 10.31,
+      "mean_bias": -2.22,
+      "basis_mean_tr": -1.97,
+      "basis_std_tr": 66.8,
+      "basis_mean_va": 0.34,
+      "time": 3.9
+    },
+    {
+      "anchor": "EMA_240 + arcsinh",
+      "rmse_raw": 14.7,
+      "rmse_hbc": 14.53,
+      "rmse_mhbc": 13.95,
+      "mean_bias": -0.22,
+      "basis_mean_tr": -1.97,
+      "basis_std_tr": 66.8,
+      "basis_mean_va": 0.34,
+      "time": 3.9
+    }
+  ]
+}
