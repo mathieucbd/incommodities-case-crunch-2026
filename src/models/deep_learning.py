@@ -337,7 +337,7 @@ if __name__ == "__main__":
         X_test_raw = test_df[active_features]
         y_test_raw = test_df[TARGET_COL]
 
-        X_train_s, X_val_s, X_test_s, scaler = scale_data(
+        X_train_s, X_val_s, X_test_s, feature_scaler, _ = scale_data(
             X_train_raw, X_val_raw, X_test_raw
         )
 
@@ -347,7 +347,7 @@ if __name__ == "__main__":
         y_val_df = y_val_raw.to_frame()
         y_test_df = y_test_raw.to_frame()
 
-        y_train_s_df, y_val_s_df, y_test_s_df, y_scaler = scale_data(
+        y_train_s_df, y_val_s_df, y_test_s_df, _, y_scaler = scale_data(
             y_train_df, y_val_df, y_test_df
         )
 

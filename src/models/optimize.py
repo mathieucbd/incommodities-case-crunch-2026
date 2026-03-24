@@ -485,8 +485,8 @@ if __name__ == "__main__":
         # --------------------------------------------
 
         # Scaled (for DNN) - Pass the cleanly filtered matrices!
-        X_tr_s, X_va_s, _, _ = scale_data(X_tr_dnn_clean, X_va_dnn_clean, test_df_dnn_clean)
-        y_tr_s_df, y_va_s_df, _, y_scaler = scale_data(
+        X_tr_s, X_va_s, _, feature_scaler, _ = scale_data(X_tr_dnn_clean, X_va_dnn_clean, test_df_dnn_clean)
+        y_tr_s_df, y_va_s_df, _, _, y_scaler = scale_data(
             y_tr.to_frame(), y_va.to_frame(), test_df[[TARGET_COL]]
         )
         y_tr_s = y_tr_s_df[TARGET_COL]
