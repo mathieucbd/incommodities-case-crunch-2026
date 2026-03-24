@@ -1,0 +1,5 @@
+fr_spot_catboost:
+  bagging_temperature: 0.4049245218674653
+  depth: 6
+  l2_leaf_reg: 1.453037677173204
+  learning_rate: 0.0469112386521551

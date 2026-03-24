@@ -1,6 +1,8 @@
+import argparse
 import logging
-from pathlib import Path
+import os
 
+from catboost import CatBoostRegressor
 import lightgbm as lgb
 import numpy as np
 import optuna
@@ -16,6 +18,7 @@ from src.preprocessing import chronological_train_val_test_split
 
 logger = logging.getLogger(__name__)
 _DATA: dict[str, pd.DataFrame | pd.Series] = {}
+_YAML_PATH = "best_hyperparameters.yaml"
 
 
 def cast_tree_categoricals(df: pd.DataFrame) -> pd.DataFrame:
@@ -74,6 +77,30 @@ def objective(trial: optuna.Trial, target_col: str, model_type: str) -> float:
             verbose=False,
         )
 
+    elif model_type == "catboost":
+        os.makedirs("data/outputs/catboost", exist_ok=True)
+        params = {
+            "loss_function": "RMSE",
+            "random_seed": 42,
+            "n_estimators": 1500,
+            "early_stopping_rounds": 100,
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
+            "depth": trial.suggest_int("depth", 4, 10),
+            "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0, log=True),
+            "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 1.0),
+            "train_dir": "data/outputs/catboost",
+        }
+        cat_features = [
+            col for col in X_train.columns if str(X_train[col].dtype) == "category"
+        ]
+        model = CatBoostRegressor(verbose=False, **params)
+        model.fit(
+            X_train,
+            y_train,
+            eval_set=(X_val, y_val),
+            cat_features=cat_features,
+        )
+
     else:
         raise ValueError(f"Unsupported model_type: {model_type}")
 
@@ -89,28 +116,45 @@ def objective(trial: optuna.Trial, target_col: str, model_type: str) -> float:
     return float(val_rmse)
 
 
-def _best_params_with_fixed(model_type: str, best_params: dict) -> dict:
-    if model_type == "lightgbm":
-        return {
-            **best_params,
-            "objective": "regression",
-            "use_missing": True,
-            "early_stopping_rounds": 100,
-        }
-    if model_type == "xgboost":
-        return {
-            **best_params,
-            "objective": "reg:squarederror",
-            "tree_method": "hist",
-            "enable_categorical": True,
-            "n_estimators": 1500,
-            "early_stopping_rounds": 100,
-        }
-    return dict(best_params)
+def save_best_params_callback(study, trial):
+    if study.best_trial.number == trial.number:
+        if os.path.exists(_YAML_PATH):
+            with open(_YAML_PATH, "r", encoding="utf-8") as f:
+                all_best_params = yaml.safe_load(f) or {}
+        else:
+            all_best_params = {}
+
+        all_best_params[study.study_name] = study.best_params
+        yaml_dir = os.path.dirname(_YAML_PATH)
+        if yaml_dir:
+            os.makedirs(yaml_dir, exist_ok=True)
+        with open(_YAML_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(all_best_params, f, sort_keys=True)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+
+    os.makedirs("data/outputs", exist_ok=True)
+    db_url = "sqlite:///data/outputs/optuna_history.db"
+
+    parser = argparse.ArgumentParser(
+        description="Tune tree model hyperparameters with Optuna"
+    )
+    parser.add_argument(
+        "--targets",
+        nargs="+",
+        choices=["fr_spot", "uk_spot"],
+        default=["fr_spot", "uk_spot"],
+    )
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        choices=["lightgbm", "xgboost", "catboost"],
+        default=["catboost"],
+    )
+    parser.add_argument("--trials", type=int, default=50)
+    args = parser.parse_args()
 
     with open("config.yaml", "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
@@ -132,9 +176,13 @@ if __name__ == "__main__":
         test_start=test_start,
     )
 
-    target_cols = [c for c in TARGET_COLS if c in df_train.columns]
-    if not target_cols:
+    available_target_cols = [c for c in TARGET_COLS if c in df_train.columns]
+    if not available_target_cols:
         raise ValueError("No configured target columns found in training dataframe")
+
+    target_cols = [c for c in args.targets if c in available_target_cols]
+    if not target_cols:
+        raise ValueError("None of the requested --targets exist in training dataframe")
 
     feature_cols = [c for c in df_train.columns if c not in target_cols]
     X_train = train_df[feature_cols]
@@ -142,8 +190,14 @@ if __name__ == "__main__":
     _DATA["X_train"] = X_train
     _DATA["X_val"] = X_val
 
-    best_cfg = {}
-    model_types = ["lightgbm", "xgboost"]
+    # Requested path was config/best_hyperparameters.yaml; adjusted to repo structure.
+    yaml_path = "best_hyperparameters.yaml"
+    _YAML_PATH = yaml_path
+    if os.path.exists(yaml_path):
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            all_best_params = yaml.safe_load(f) or {}
+    else:
+        all_best_params = {}
 
     for target_col in target_cols:
         y_train = train_df[target_col]
@@ -151,26 +205,31 @@ if __name__ == "__main__":
         _DATA[f"y_train_{target_col}"] = y_train
         _DATA[f"y_val_{target_col}"] = y_val
 
-        for model_type in model_types:
+        for model_type in args.models:
             logger.info("Running Optuna: target=%s model=%s", target_col, model_type)
-            study = optuna.create_study(direction="minimize")
+            study_name = f"{target_col}_{model_type}"
+            study = optuna.create_study(
+                study_name=study_name,
+                storage=db_url,
+                load_if_exists=True,
+                direction="minimize",
+            )
             study.optimize(
                 lambda trial: objective(trial, target_col, model_type),
-                n_trials=50,
+                n_trials=args.trials,
+                callbacks=[save_best_params_callback],
                 show_progress_bar=False,
             )
 
             key = f"{target_col}_{model_type}"
-            best_cfg[key] = _best_params_with_fixed(model_type, study.best_params)
+            all_best_params[key] = study.best_params
+            with open(yaml_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(all_best_params, f, sort_keys=True)
             logger.info(
                 "Best for %s: RMSE=%.5f params=%s",
                 key,
                 study.best_value,
-                best_cfg[key],
+                all_best_params[key],
             )
 
-    out_path = Path("best_hyperparameters.yaml")
-    with out_path.open("w", encoding="utf-8") as f:
-        yaml.safe_dump(best_cfg, f, sort_keys=True)
-
-    logger.info("Saved best hyperparameters to %s", out_path)
+    logger.info("Saved/updated best hyperparameters in %s", yaml_path)
