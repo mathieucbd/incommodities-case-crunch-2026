@@ -181,7 +181,7 @@ if __name__ == "__main__":
         y_test = test_df[TARGET_COL]
 
         logger.info("Scaling features strictly referencing Training distributions...")
-        X_train_s, X_val_s, X_test_s, scaler = scale_data(X_train, X_val, X_test)
+        X_train_s, X_val_s, X_test_s, feature_scaler, _ = scale_data(X_train, X_val, X_test)
 
         # We reconstruct the sequentially shifted mathematical arrays uniformly allowing specific slices
         X_full = pd.concat([X_train_s, X_val_s, X_test_s]).sort_index()
