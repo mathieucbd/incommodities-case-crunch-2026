@@ -68,28 +68,22 @@ print("=" * 90)
 t0 = time.time()
 x_train, y_train, x_test = load_data("data/raw")
 
-# v9 FIX: build features on concat(train, test) so rolling/shift features
-# have full history at test boundary. build_features() never uses fr_spot/uk_spot → no leakage.
-all_x = pd.concat([x_train, x_test], axis=0)
-all_fe = build_features(all_x, config)
-
-n_train_rows = len(x_train)
-train_fe = all_fe.iloc[:n_train_rows].copy()
+# v7 style: build features separately (cold-start at test boundary, but matches v7 behavior)
+train_fe = build_features(pd.concat([x_train], axis=0), config)
 train_fe = train_fe.join(y_train[["fr_spot", "uk_spot"]])
-test_fe = all_fe.iloc[n_train_rows:].copy()
+test_fe = build_features(x_test, config)
 
 print(f"  Data loaded in {time.time() - t0:.0f}s")
 print(f"  Train shape: {train_fe.shape}, Test shape: {test_fe.shape}")
-print(f"  Features built on concat (no cold-start at test boundary)")
+print(f"  Features built separately (v7 style)")
 
 holdout_start = config["validation"]["holdout_start"]
 mask_val = train_fe["datetime_CET"] >= holdout_start
 df_train = train_fe[~mask_val].copy()
 df_val = train_fe[mask_val].copy()
 
-# UK 12m window — post-crisis regime matches val better (-0.43 RMSE)
-UK_12M_START = "2023-02-01"
-df_train_uk = df_train[df_train["datetime_CET"] >= UK_12M_START].copy()
+# v7: UK uses full training window (not 12m)
+df_train_uk = df_train.copy()
 
 print(f"  Train FR (full): {len(df_train)}, Train UK (12m): {len(df_train_uk)}, "
       f"Val: {len(df_val)}, Test: {len(test_fe)}")
@@ -166,7 +160,7 @@ FR_PARAMS = {
     "use_best_model": True,
 }
 
-feat_fr = [f for f in feat_fr_v8 if f in df_train.columns]
+feat_fr = [f for f in feat_fr_28 if f in df_train.columns]  # v7: 28 features (no v8 additions)
 print(f"  Features: {len(feat_fr)}")
 
 cb_fr = train_tree("catboost", FR_PARAMS,
@@ -190,7 +184,7 @@ print("  2. UK CatBoost — Basis modeling (12m window + v8 features)")
 print("=" * 90)
 
 hours_va_uk = df_val["hour"].values
-uk_approach = "basis_12m"
+uk_approach = "basis_full"
 
 uk_spot_tr = df_train_uk["uk_spot"].values
 uk_spot_va = df_val["uk_spot"].values
@@ -211,7 +205,7 @@ UK_PARAMS = {
     "use_best_model": True,
 }
 
-feat_uk_final = [f for f in feat_uk_v8 if f in df_train_uk.columns]
+feat_uk_final = [f for f in feat_uk_confirmed if f in df_train_uk.columns]  # v7: 150 features (no v8 additions)
 print(f"  UK features (v8): {len(feat_uk_final)}")
 
 cb_uk = train_tree("catboost", UK_PARAMS,
@@ -409,10 +403,12 @@ print("\n" + "=" * 90)
 print("  4. Ensemble — Per-regime weight optimization (5 regimes)")
 print("=" * 90)
 
-# v9: XGBoost FR removed from ensemble (RMSE=28.34, weight=0 in all regimes)
+# v7: All 5 FR models in ensemble (XGB gets weight=0 but affects optimization)
 fr_models = {"CB": preds_fr_cb}
 if preds_fr_lgb is not None:
     fr_models["LGB"] = preds_fr_lgb
+if preds_fr_xgb is not None:
+    fr_models["XGB"] = preds_fr_xgb
 fr_models["EN"] = preds_fr_en
 fr_models["DNN"] = preds_fr_dnn
 
@@ -548,7 +544,18 @@ if HAS_LGB:
         preds_fr_test_lgb = rm_fr_test + predict_tree(lgb_fr_final, df_test_pred[feat_fr])
         print(f"  FR LightGBM: retrained")
 
-# v9: XGBoost FR removed from ensemble
+# FR XGBoost retrain (v7: included even though weight≈0)
+preds_fr_test_xgb = None
+if HAS_XGB:
+    fr_xgb_needs = any(fr_regime_weights.get(r, {}).get("XGB", 0) > 0 for r in REGIMES)
+    if fr_xgb_needs:
+        xgb_fr_final = retrain_tree("xgboost", XGB_FR_PARAMS,
+            df_full_train.loc[df_full_train.index[valid_fr_full], feat_fr],
+            y_dev_fr_full[valid_fr_full],
+            xgb_fr.best_iteration,
+            sample_weight=w_fr_full[valid_fr_full])
+        preds_fr_test_xgb = rm_fr_test + predict_tree(xgb_fr_final, df_test_pred[feat_fr])
+        print(f"  FR XGBoost: retrained")
 
 # FR Elastic Net retrain
 preds_fr_test_en = None
@@ -571,21 +578,23 @@ if fr_dnn_needs:
         np.nan_to_num(df_test_pred[feat_dnn_final].values, 0))
     torch.manual_seed(42); np.random.seed(42)
     dnn_fr_final = ElecDNN(len(feat_dnn_final), [192, 96], dropout=0.2)
-    retrain_epochs_fr = max(int(dnn_fr_epochs * 0.8), 20)
-    n_hold_fr = max(int(len(X_dnn_full) * 0.05), 100)
+    # v7 style: train for dnn_epochs + 5, fake validation (no early stopping)
+    retrain_epochs_fr = dnn_fr_epochs + 5
     dnn_fr_final, _ = train_dnn(dnn_fr_final,
-                                 X_dnn_full[:-n_hold_fr],
-                                 y_dev_fr_full[valid_fr_full][:-n_hold_fr].astype(np.float32),
-                                 X_dnn_full[-n_hold_fr:],
-                                 y_dev_fr_full[valid_fr_full][-n_hold_fr:].astype(np.float32),
-                                 max_epochs=retrain_epochs_fr, patience=30)
+                                 X_dnn_full,
+                                 y_dev_fr_full[valid_fr_full].astype(np.float32),
+                                 X_dnn_full[:256],
+                                 y_dev_fr_full[valid_fr_full][:256].astype(np.float32),
+                                 max_epochs=retrain_epochs_fr, patience=retrain_epochs_fr)
     preds_fr_test_dnn = rm_fr_test + predict_dnn(dnn_fr_final, X_dnn_test)
-    print(f"  FR DNN: retrained ({retrain_epochs_fr} max epochs, 5% holdout)")
+    print(f"  FR DNN: retrained ({retrain_epochs_fr} epochs, v7 style)")
 
 # FR test ensemble
 fr_test_models = {"CB": preds_fr_test_cb}
 if preds_fr_test_lgb is not None:
     fr_test_models["LGB"] = preds_fr_test_lgb
+if preds_fr_test_xgb is not None:
+    fr_test_models["XGB"] = preds_fr_test_xgb
 if preds_fr_test_en is not None:
     fr_test_models["EN"] = preds_fr_test_en
 if preds_fr_test_dnn is not None:
@@ -598,24 +607,22 @@ preds_fr_test_damp = preds_fr_test + np.array([hbc_fr_damp.get((m, h), 0) for m,
 print(f"  FR test predictions (std HBC): min={preds_fr_test_hbc.min():.1f}, "
       f"max={preds_fr_test_hbc.max():.1f}, mean={preds_fr_test_hbc.mean():.1f}")
 
-# ── UK: Retrain (basis, 12m window) ────────────────────────────────────
-uk_12m_cutoff = pd.to_datetime(df_full_train["datetime_CET"].max()) - pd.DateOffset(months=12)
-df_full_train_uk = df_full_train[df_full_train["datetime_CET"] >= uk_12m_cutoff].copy()
-n_uk_12m = len(df_full_train_uk)
+# ── UK: Retrain (basis, full window — v7 style) ──────────────────────
+df_full_train_uk = df_full_train  # v7: full window for retrain
 
-uk_moc_uk12m = df_full_train_uk["uk_merit_order_cost"].values
+uk_moc_full = df_full_train_uk["uk_merit_order_cost"].values
 uk_moc_test = df_test_pred["uk_merit_order_cost"].values
-uk_spot_uk12m = train_fe.loc[df_full_train_uk.index, "uk_spot"].values
-y_basis_uk12m = uk_spot_uk12m - uk_moc_uk12m
-valid_uk_12m = np.isfinite(y_basis_uk12m)
+uk_spot_full = train_fe.loc[df_full_train_uk.index, "uk_spot"].values
+y_basis_full = uk_spot_full - uk_moc_full
+valid_uk_full = np.isfinite(y_basis_full)
 
 # UK CatBoost retrain
 cb_uk_final = retrain_tree("catboost", UK_PARAMS,
-    df_full_train_uk.loc[df_full_train_uk.index[valid_uk_12m], feat_uk_final],
-    y_basis_uk12m[valid_uk_12m],
+    df_full_train_uk.loc[df_full_train_uk.index[valid_uk_full], feat_uk_final],
+    y_basis_full[valid_uk_full],
     cb_uk.best_iteration)
 preds_uk_test_cb = uk_moc_test + predict_tree(cb_uk_final, df_test_pred[feat_uk_final])
-print(f"  UK CatBoost (basis, 12m): retrained on {n_uk_12m} samples")
+print(f"  UK CatBoost (basis, full): retrained on {len(df_full_train_uk)} samples")
 
 # UK LightGBM retrain
 preds_uk_test_lgb = None
@@ -623,11 +630,11 @@ if HAS_LGB:
     uk_lgb_needs = any(uk_regime_weights.get(r, {}).get("LGB", 0) > 0 for r in REGIMES)
     if uk_lgb_needs:
         lgb_uk_final = retrain_tree("lightgbm", LGB_UK_PARAMS,
-            df_full_train_uk.loc[df_full_train_uk.index[valid_uk_12m], feat_uk_final],
-            y_basis_uk12m[valid_uk_12m],
+            df_full_train_uk.loc[df_full_train_uk.index[valid_uk_full], feat_uk_final],
+            y_basis_full[valid_uk_full],
             lgb_uk.best_iteration)
         preds_uk_test_lgb = uk_moc_test + predict_tree(lgb_uk_final, df_test_pred[feat_uk_final])
-        print(f"  UK LightGBM: retrained 12m")
+        print(f"  UK LightGBM: retrained full")
 
 # UK XGBoost retrain
 preds_uk_test_xgb = None
@@ -635,21 +642,21 @@ if HAS_XGB:
     uk_xgb_needs = any(uk_regime_weights.get(r, {}).get("XGB", 0) > 0 for r in REGIMES)
     if uk_xgb_needs:
         xgb_uk_final = retrain_tree("xgboost", XGB_UK_PARAMS,
-            df_full_train_uk.loc[df_full_train_uk.index[valid_uk_12m], feat_uk_final],
-            y_basis_uk12m[valid_uk_12m],
+            df_full_train_uk.loc[df_full_train_uk.index[valid_uk_full], feat_uk_final],
+            y_basis_full[valid_uk_full],
             xgb_uk.best_iteration)
         preds_uk_test_xgb = uk_moc_test + predict_tree(xgb_uk_final, df_test_pred[feat_uk_final])
-        print(f"  UK XGBoost: retrained 12m")
+        print(f"  UK XGBoost: retrained full")
 
 # UK Elastic Net retrain
 preds_uk_test_en = None
 uk_en_needs = any(uk_regime_weights.get(r, {}).get("EN", 0) > 0 for r in REGIMES)
 if uk_en_needs:
     en_uk_final, en_uk_scaler_full = retrain_elastic_net(
-        df_full_train_uk.loc[df_full_train_uk.index[valid_uk_12m], feat_uk_final].values,
-        y_basis_uk12m[valid_uk_12m], alpha=1.0, l1_ratio=0.9)
+        df_full_train_uk.loc[df_full_train_uk.index[valid_uk_full], feat_uk_final].values,
+        y_basis_full[valid_uk_full], alpha=1.0, l1_ratio=0.9)
     preds_uk_test_en = uk_moc_test + predict_elastic_net(en_uk_final, en_uk_scaler_full, df_test_pred[feat_uk_final].values)
-    print(f"  UK Elastic Net: retrained 12m (n_nonzero={np.sum(en_uk_final.coef_ != 0)})")
+    print(f"  UK Elastic Net: retrained full (n_nonzero={np.sum(en_uk_final.coef_ != 0)})")
 
 # UK DNN retrain
 preds_uk_test_dnn = None
@@ -657,21 +664,21 @@ uk_dnn_needs = any(uk_regime_weights.get(r, {}).get("DNN", 0) > 0 for r in REGIM
 if uk_dnn_needs:
     dnn_scaler_uk_full = StandardScaler()
     X_dnn_uk_full = dnn_scaler_uk_full.fit_transform(
-        np.nan_to_num(df_full_train_uk.loc[df_full_train_uk.index[valid_uk_12m], feat_dnn_final].values, 0))
+        np.nan_to_num(df_full_train_uk.loc[df_full_train_uk.index[valid_uk_full], feat_dnn_final].values, 0))
     X_dnn_uk_test = dnn_scaler_uk_full.transform(
         np.nan_to_num(df_test_pred[feat_dnn_final].values, 0))
     torch.manual_seed(42); np.random.seed(42)
     dnn_uk_final = ElecDNN(len(feat_dnn_final), [768, 384, 192], dropout=0.3)
-    retrain_epochs_uk = max(int(dnn_uk_epochs * 0.8), 20)
-    n_hold_uk = max(int(len(X_dnn_uk_full) * 0.05), 100)
+    # v7 style: train for dnn_epochs + 5, fake validation (no early stopping)
+    retrain_epochs_uk = dnn_uk_epochs + 5
     dnn_uk_final, _ = train_dnn(dnn_uk_final,
-                                 X_dnn_uk_full[:-n_hold_uk],
-                                 y_basis_uk12m[valid_uk_12m][:-n_hold_uk].astype(np.float32),
-                                 X_dnn_uk_full[-n_hold_uk:],
-                                 y_basis_uk12m[valid_uk_12m][-n_hold_uk:].astype(np.float32),
-                                 max_epochs=retrain_epochs_uk, patience=30)
+                                 X_dnn_uk_full,
+                                 y_basis_full[valid_uk_full].astype(np.float32),
+                                 X_dnn_uk_full[:256],
+                                 y_basis_full[valid_uk_full][:256].astype(np.float32),
+                                 max_epochs=retrain_epochs_uk, patience=retrain_epochs_uk)
     preds_uk_test_dnn = uk_moc_test + predict_dnn(dnn_uk_final, X_dnn_uk_test)
-    print(f"  UK DNN: retrained 12m ({retrain_epochs_uk} max epochs, 5% holdout)")
+    print(f"  UK DNN: retrained full ({retrain_epochs_uk} epochs, v7 style)")
 
 # UK test ensemble
 uk_test_models = {"CB": preds_uk_test_cb}
@@ -729,7 +736,7 @@ print(f"    FR CatBoost:       RMSE={rmse_fr_cb:.2f}  +HBC={rmse_fr_cb_hbc:.2f}"
 if preds_fr_lgb is not None:
     print(f"    FR LightGBM:       RMSE={rmse_fr_lgb:.2f}  +HBC={rmse_fr_lgb_hbc:.2f}")
 if preds_fr_xgb is not None:
-    print(f"    FR XGBoost:        RMSE={rmse_fr_xgb:.2f}  +HBC={rmse_fr_xgb_hbc:.2f}  (not in ensemble)")
+    print(f"    FR XGBoost:        RMSE={rmse_fr_xgb:.2f}  +HBC={rmse_fr_xgb_hbc:.2f}")
 print(f"    FR Elastic Net:    RMSE={rmse_fr_en:.2f}  +HBC={rmse_fr_en_hbc:.2f}")
 print(f"    FR DNN:            RMSE={rmse_fr_dnn:.2f}  +HBC={rmse_fr_dnn_hbc:.2f}")
 print(f"    FR Regime Ens:     RMSE={rmse_fr_ens:.2f}  +HBC={rmse_fr_final:.2f}")
