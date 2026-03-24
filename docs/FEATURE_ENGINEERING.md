@@ -1,58 +1,119 @@
-# InCommodities Case Crunch 2026: Feature Engineering Pipeline Guide
+# InCommodities Case Crunch 2026: Feature Engineering Pipeline
 
-This formal documentation details the quantitative logic, physical grid assumptions, and rigorous leakage-prevention mechanisms implemented in the InCommodities Case Crunch 2026 feature engineering pipeline.
+~290 engineered features across 30 categories, built on top of the 111 raw columns.
+All transformations are **stateless** (train = test behaviour) and **leakage-free** (only lagged targets used, rolling windows are trailing-only).
 
-## 1. Physical Grid Fundamentals
+---
 
-### Thermal Floor (Marginal Cost Proxy)
-The **Thermal Floor** feature captures the short-run marginal cost (SRMC) of electricity production from natural gas-fired Combined Cycle Gas Turbines (CCGT), which frequently set the clearing price in European Day-Ahead Markets. 
-The mathematical proxy is defined as:
-```text
-Cost_Thermal = (gas_price / 0.5) + (emission_price * (0.202 / 0.5))
+## Category Overview
+
+| Cat | Function | # Features | Description |
+|-----|----------|------------|-------------|
+| 1 | `engineer_calendar_effects` | 21 | Hour/DoW/month raw + cyclical sin/cos + binary period flags |
+| 2 | `engineer_holiday_features` | 10 | FR/UK/DE/BE/NL holidays, bridge days, distance to next holiday |
+| 3 | `engineer_fundamental_market` | 23 | Residual loads, spark spreads, baseload gaps, supply-demand ratios |
+| 4 | `engineer_renewable_penetration` | 12 | Wind/solar penetration FR/UK/DE + continental + UK threshold flags |
+| 5 | `engineer_renewable_dynamics` | 15 | Ramps (1h/3h/6h), 24h changes, 24h rolling volatility |
+| 6 | `engineer_nuclear_features` | 11 | Changes (24h/48h/168h), threshold flags, % of load, rolling deviation |
+| 7 | `engineer_hydro_features` | 9 | Alpine hydro, reservoir share, nuclear+hydro combined, baseload surplus |
+| 8 | `engineer_interconnectors` | 23 | ATC/NTC totals, utilization rates, net flows, cost spreads, congestion |
+| 9 | `engineer_price_features` | 19 | Multi-horizon lags, cross-zone spreads, continental average, 24h/168h changes |
+| 10 | `engineer_interaction_features` | 13 | Thermal_need×gas, wind×hour, solar×load, congestion×spark_diff |
+| 11 | `engineer_regional_features` | 11 | Continental aggregates, Nordic wind, Iberian, Benelux, Alpine |
+| 12 | `engineer_river_temperature` | 12 | Binary threshold flags, excess temp, river temp × nuclear_low interaction |
+| 13 | `engineer_nonlinear_transforms` | 11 | Squared loads, cubed thermal need, log-spark, sqrt gas, clipped wind |
+| 14 | `engineer_rolling_statistics` | 24 | 24h/168h mean/std/min/max for spot; gas/emission rolling means; deviations |
+| 15 | `engineer_momentum_features` | 8 | Price acceleration (2nd derivative), gas momentum, nuclear trend, EWM |
+| 16 | `engineer_advanced_supply_demand` | 8 | Residual v2 (minus run-of-river), security margin, scarcity critical/extreme |
+| 17 | `engineer_residual_ramps` | 8 | 1h and 3h ramps for load and residual load (duck-curve pressure) |
+| 18 | `engineer_multi_efficiency_spark` | 4 | OCGT (40% eff) and CCGT (55% eff) marginal costs for FR and UK |
+| 19 | `engineer_advanced_interconnection` | 5 | Flow/ATC ratio, unused capacity per cable, total unused to UK |
+| 20 | `engineer_regime_zscores` | 8 | 14-day z-scores for residual, load, wind; lag reliability ratio |
+| 21 | `engineer_stochastic_signals` | 10 | Jump count/magnitude (24h/48h), vol ratio (24h/168h), mean reversion |
+| 22 | `engineer_asinh_transforms` | 4 | arcsinh for spot_la and spark spreads (handles negatives without discontinuity) |
+| 23 | `engineer_nuclear_shortfall` | 2 | Expanding-max gap: `max_seen_so_far − current_availability` |
+| 24 | `engineer_atc_ratios` | 6 | Per-cable ATC/NTC ratio for all 6 FR↔UK cables |
+| 25 | `engineer_market_specific_features` | 10 | SDAC/N2EX: gas spread, continental floor, import ratio, intraday anchors, dark doldrums |
+| 26 | `engineer_price_formation_signals` | 7 | Nuke×gas interaction, implied RE surplus, UK cheapest import, net capacity cost |
+| 27 | `engineer_fr_continent_features` | 12 | Continental merit order, zero-MC pen, euro scarcity, wind-nuke gap, ES fundamentals |
+| 28 | `engineer_uk_island_features` | 6 | Gas utilization, gas headroom, capacity margin, gas cost per MW, self-sufficiency |
+| 29 | `engineer_regime_features` | 11 | Iberian exception flag, gas-on-margin binary, oversupply/negative-price risk, nuclear avail ratio |
+| 30 | `engineer_advanced_price_proxies` | 14 | Dynamic marginal, opportunity cost, scarcity barrier, load-price signal, basis v2 |
+
+---
+
+## Key Physical Assumptions
+
+### Thermal Floor / Spark Spread
 ```
-- **0.5**: Represents the baseline thermal efficiency (50%) of a modern CCGT plant, meaning it takes 2 MWh of continuous thermal gas energy to produce 1 MWh of electricity.
-- **0.202**: Represents the specific emission factor (tonnes of CO2 per MWh of thermal natural gas burned). 
+spark_spread = gas_price / efficiency + emission_price × emission_factor
+```
+- **Baseline (Cat 3):** 50% efficiency, 0.37 tCO2/MWh → `fr_spark_spread`, `uk_spark_spread`
+- **CCGT (Cat 18):** 55% efficiency → `fr_spark_ccgt`, `uk_spark_ccgt`
+- **OCGT (Cat 18):** 40% efficiency → `fr_spark_ocgt`, `uk_spark_ocgt`
+- **Merit order cost (Cat 25):** Interpolates CCGT↔OCGT based on scarcity ratio
 
-By forward-filling sparse gas and emission targets to create this floor, the model learns the lower bound of thermal bidding behavior without capturing irrelevant intraday noise.
+### Nuclear Shortfall (Cat 23)
+Uses `expanding().max()` (the highest availability seen so far) rather than a hardcoded constant. This eliminates look-ahead bias while still capturing the crisis/recovery arc.
 
-### Nuclear Shortfall
-The **Nuclear Shortfall** feature shifts focus from raw available capacity to *missing* capacity. The French grid is heavily dominated by a 56-reactor nuclear fleet with a roughly 61,400 MW installed capacity limit. 
-We explicitly hardcode this constant limit (`61400 - fr_nuclear_avcap_f`) rather than using dynamic `max()` calculations across the dataframe, definitively eliminating lookahead bias.
+### Scarcity Features (Cat 16)
+```
+scarcity_ratio = residual_load / (nuclear_cap + gas_cap)
+security_margin = (nuclear_cap + gas_cap) - residual_load
+```
+Critical threshold (>0.85) and extreme threshold (>0.95) binary flags capture convex merit-order effects.
 
-*Note: UK Scarcity Metrics (total capacity, security margin, scarcity ratio) were surgically pruned following Mutual Information (MI) validation. UK spot variance is overwhelmingly gas-price driven (thermal floor) rather than physical capacity-driven, rendering those specific metrics statistical dead weight.*
+### Scarcity Barrier (Cat 30)
+```
+scarcity_barrier = spark_spread × (1 / (1 − scarcity)^1.5)
+```
+Models the exponential price explosion as the system approaches capacity limits.
 
-## 2. Advanced Statistical Features
+---
 
-### `asinh` Transformation
-To successfully manage heavy-tailed volatility distributions in the Day-Ahead Market, we implement the inverse hyperbolic sine (`np.arcsinh()`) rather than traditional `np.log1p()`. This is quantitatively superior because:
-1. It smoothly handles the 3.13% incidence rate of **negative prices** specifically seen on the French grid.
-2. It effectively compresses the extreme right-tail kurtosis (11.31) observed in UK pricing during stress events, scaling variance without corrupting the underlying order of magnitude.
+## Leakage Prevention
 
-### Residual Ramps
-Ramps are modeled via a 3-hour differenced residual load (`.diff(3)`). This explicitly maps the extreme thermal generation stress caused by the "Duck Curve"—rapid shifts required to meet peak evening demand as solar generation inevitably collapse.
+1. **Rolling windows:** All use `center=False` (trailing-only).
+2. **Shift convention:** `fr_spot_la` is already T-24 lagged. Additional shifts add further days: `.shift(24)` → T-48, `.shift(144)` → T-168.
+3. **Expanding max** in nuclear shortfall only uses data seen before each timestamp.
+4. **Regime dummies** (e.g., `iberian_exception`) are hardcoded date ranges, not derived from price data.
 
-### Rolling Z-Scores & Volatility
-1. **Regime Normalization**: A 14-day (336-hour) rolling Z-score algorithm isolates fundamental shifts in load regimes independently of raw seasonality, normalizing demand across varying structural conditions.
-2. **Volatility Indicators**: The pipeline computes 24-hour and 72-hour rolling standard deviations of lagged target prices to embed short-run stress persistence directly into the feature matrix. Both implementations strictly utilize retrospective trailing windows (`center=False`) to guarantee zero future peeking.
+---
 
-### Weekly Periodicity
-To capture the massive autocorrelation at the T-168 mark (predicting Monday at 12:00 using last Monday at 12:00), we lag the target features by shifting the existing T-24 features back a further 144 hours. Positive integer shifts explicitly lock the feature into the strictly observable past.
+## Config Parameters (`config.yaml → feature_engineering`)
 
-## 3. Structural Regimes & Pruning
+| Parameter | Default | Usage |
+|-----------|---------|-------|
+| `gas_efficiency` | 0.50 | Baseline spark spread denominator |
+| `emission_factor` | 0.37 | tCO2/MWh for spark spread |
+| `ocgt_efficiency` | 0.40 | Cat 18 OCGT spark spread |
+| `ccgt_efficiency` | 0.55 | Cat 18 CCGT spark spread |
+| `nuclear_marginal_cost` | 12.0 | EUR/MWh for dynamic marginal cost (Cat 30) |
+| `transport_cost_approx` | 2.0 | EUR/MWh cross-border transport (Cat 30) |
+| `river_hot_threshold_fr` | 25.0 | °C threshold for FR nuclear derating |
+| `river_hot_threshold_de` | 23.0 | °C threshold for DE thermal derating |
+| `nuclear_low_threshold` | 35000 | MW below = FR nuclear "low" flag |
+| `nuclear_very_low_threshold` | 25000 | MW below = FR nuclear "very low" flag |
+| `scarcity_critical_threshold` | 0.85 | Cat 16 scarcity critical flag |
+| `scarcity_extreme_threshold` | 0.95 | Cat 16 scarcity extreme flag |
+| `jump_threshold` | 50.0 | EUR/MWh change defining a price jump (Cat 21) |
+| `scarcity_barrier_power` | 1.5 | Exponent for convex barrier (Cat 30) |
 
-### Interconnector Masks
-High Voltage Direct Current (HVDC) interconnectors (e.g., Viking Link) possess enormous structural importance but often contain massive sequential blocks of `NaN` values resulting from physical outages or pre-commissioning dates. 
-Instead of simple mean-imputation, we compute a binary `is_online` flag. This prevents tree-based algorithms from erroneously learning split mappings on arbitrary imputed values, allowing the network architecture to dynamically switch regimes based on structural availability.
+---
 
-### Feature Pruning
-Following exhaustive Mutual Information analysis against dual targets:
-- **Distant Grid Drops**: Residual load calculations for highly distant, low-correlation zones (e.g., DE, PL, CZ) and derivative ATC ratio features were fully pruned to drastically condense the feature space.
-- **Tree-Interaction Defense**: Critical `calendar` features (hour, month, holiday flags) were explicitly protected from linear pruning lists. Traditional pairwise MI fails to capture deep, non-linear interactions necessary for tree architectures (e.g., "If hour=19 AND is_uk_holiday=1"). 
+## Empirically Validated Features (Paul's Research)
 
-## 4. Pipeline Security (Zero Leakage)
+The following were validated by partial correlation analysis:
 
-### Dual Scaler Architecture
-To maintain mathematical integrity and absolute strict chronological separation:
-1. **Target Isolation**: `fr_spot` and `uk_spot` are meticulously isolated and stored before any feature transformations apply to prevent target distribution leakage into the input schema.
-2. **Dual Transformers**: Our architecture deploys two independent `StandardScaler` instances (`feature_scaler` and `target_scaler`). Scaling input and output variances independently protects deeper DNN gradients in PyTorch.
-3. **Strict Validation Fitting**: Both scalers are strictly instantiated and updated (`.fit_transform()`) directly onto the `train_df`. The ensuing validation (`val_df`) and holdout (`test_df`) arrays are subsequently processed via `.transform()` only, locking all distributional moments into the unobserved past.
+| Feature | Partial r (FR) | Partial r (UK) | Controls |
+|---------|---------------|---------------|----------|
+| `continent_thermal_need` | 0.534 | — | spark_spread |
+| `continent_zero_mc_pen` | −0.550 | — | spark_spread |
+| `euro_scarcity_ratio` | 0.618 | — | spark_spread |
+| `continent_weighted_price` | 0.609 | — | spark_spread |
+| `uk_gas_cost_per_mw` | — | 0.663 | spot_la |
+| `uk_gas_utilization` | — | 0.513 | spark_spread |
+| `uk_capacity_margin` | — | −0.517 | spark_spread |
+| `uk_self_sufficiency` | — | −0.509 | spark_spread |
+| `fr_nuke_shortfall_x_gas` | 0.768 | 0.763 | shortfall alone |
+| `uk_cheapest_import` | — | 0.433 (partial) | fr_spot_la |

@@ -1,3 +1,21 @@
+feature_engineering:
+  gas_efficiency: 0.50          # CCGT baseline efficiency
+  emission_factor: 0.37         # tCO2/MWh of gas burned
+  ocgt_efficiency: 0.40         # OCGT peaker efficiency
+  ccgt_efficiency: 0.55         # CCGT modern efficiency
+  nuclear_marginal_cost: 12.0   # EUR/MWh nuclear short-run marginal cost
+  transport_cost_approx: 2.0    # EUR/MWh cross-border transport cost proxy
+  river_hot_threshold_fr: 25.0  # °C above which FR nuclear derating kicks in
+  river_hot_threshold_de: 23.0  # °C above which DE thermal derating kicks in
+  nuclear_low_threshold: 35000  # MW below = FR nuclear "low"
+  nuclear_very_low_threshold: 25000
+  uk_wind_high_threshold: 0.50
+  uk_wind_very_high_threshold: 0.65
+  scarcity_critical_threshold: 0.85
+  scarcity_extreme_threshold: 0.95
+  jump_threshold: 50.0          # EUR/MWh change defining a "price jump"
+  scarcity_barrier_power: 1.5   # exponent for convex merit-order barrier
+
 data:
   raw_dir: "data/raw"
   features_file: "x_train.csv"
