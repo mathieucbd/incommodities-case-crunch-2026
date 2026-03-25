@@ -9,7 +9,7 @@ shared:
   n_seeds: 1
   random_state: 42
 fr:
-  huber_delta: 3.2407002260456883
+  huber_delta: 4.332893475050118
   CNNLSTM:
     cnn_channels: 128
     lstm_hidden: 256
@@ -20,22 +20,25 @@ fr:
     _best_rmse: 19.8931
   ENCDEC:
     enc_hidden: 128
-    dec_hidden: 64
-    enc_layers: 2
-    dropout: 0.2
-    lr: 0.0005
+    dec_hidden: 32
+    enc_layers: 3
+    dropout: 0.3667809262629361
+    lr: 0.00016423134200347118
+    _best_rmse: 18.3858
 uk:
-  huber_delta: 12.55764280201213
+  huber_delta: 11.262161324291945
   CNNLSTM:
     cnn_channels: 64
     lstm_hidden: 128
     cnn_layers: 2
     lstm_layers: 1
-    dropout: 0.3
-    lr: 0.0003
+    dropout: 0.14544820384170357
+    lr: 0.0029181130923507407
+    _best_rmse: 11.0191
   ENCDEC:
     enc_hidden: 128
-    dec_hidden: 64
-    enc_layers: 2
-    dropout: 0.3
-    lr: 0.0003
+    dec_hidden: 32
+    enc_layers: 1
+    dropout: 0.24997252222225858
+    lr: 0.0005183249996776074
+    _best_rmse: 11.7752
