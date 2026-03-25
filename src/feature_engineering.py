@@ -25,6 +25,8 @@ Categories 24-29: research-backed additions
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -48,6 +50,12 @@ def build_features(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     Returns:
         DataFrame with all original columns plus ~220 engineered features.
     """
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+        return _build_features_impl(df, config)
+
+
+def _build_features_impl(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     cfg = config["feature_engineering"]
     df = df.copy()
 
@@ -67,6 +75,7 @@ def build_features(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     df = _add_nonlinear_transforms(df)
     df = _add_rolling_statistics(df)
     df = _add_momentum_features(df)
+    df = df.copy()  # defragment at the midpoint (~150 columns added so far)
     df = _add_advanced_supply_demand(df, cfg)
     df = _add_load_residual_ramps(df)
     df = _add_multi_efficiency_spark(df, cfg)
@@ -1797,4 +1806,4 @@ def _add_advanced_price_proxies(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     df["fr_basis_v2_roll_24h_mean"] = df["fr_basis_v2"].rolling(24, min_periods=1).mean()
     df["uk_basis_v2_roll_24h_mean"] = df["uk_basis_v2"].rolling(24, min_periods=1).mean()
 
-    return df
+    return df.copy()  # defragment after 290+ column assignments
