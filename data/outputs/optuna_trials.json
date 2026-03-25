@@ -1063,5 +1063,41 @@
       "lr": 0.0011886545929145225
     },
     "elapsed_s": 112.5
+  },
+  {
+    "model": "ENCDEC",
+    "country": "fr",
+    "trial": 3,
+    "rmse": 18.4103,
+    "best_epoch": 14,
+    "params": {
+      "huber_delta": 4.8358221493933335,
+      "batch_size": 128,
+      "warmup_epochs": 7,
+      "enc_hidden": 128,
+      "dec_hidden": 64,
+      "enc_layers": 3,
+      "dropout": 0.41535083100682557,
+      "lr": 0.0014980799283225961
+    },
+    "elapsed_s": 420.9
+  },
+  {
+    "model": "ENCDEC",
+    "country": "fr",
+    "trial": 4,
+    "rmse": 18.9451,
+    "best_epoch": 9,
+    "params": {
+      "huber_delta": 12.586918433581856,
+      "batch_size": 128,
+      "warmup_epochs": 10,
+      "enc_hidden": 256,
+      "dec_hidden": 32,
+      "enc_layers": 2,
+      "dropout": 0.31831049773859826,
+      "lr": 0.00044392204493927514
+    },
+    "elapsed_s": 745.4
   }
 ]

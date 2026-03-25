@@ -1,6 +1,6 @@
 data:
   raw_dir: "data/raw"
-  output_dir: "outputs"
+  output_dir: "data/outputs"
 
 targets:
   - fr_spot

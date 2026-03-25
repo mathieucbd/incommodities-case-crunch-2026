@@ -1,17 +1,14 @@
-"""Final pipeline v11 — CNN-LSTM and Encoder-Decoder sequence models added.
+"""Final pipeline v11 — CNN-LSTM first; HybridMLP and EncDec removed.
 
 v11 changes vs v10:
-  - ADD stage 3f: CNN-LSTM and Encoder-Decoder sequence models (lookback=48)
-      HPs read from outputs/best_parameters.yaml (updated by optimize_seq_models.py)
+  - MOVE stage 3a: CNN-LSTM sequence models (lookback=48) run first
+      HPs read from data/outputs/best_parameters.yaml
       Each model trained for FR (Huber delta from yaml) and UK separately
+  - REMOVE: HybridMLPRegressor (arXiv:2601.02856)
+  - REMOVE: EncoderDecoderRegressor
+  - ADD: Residual correlation matrix + per-model RMSE table at the end
   - FIX: ensemble.py now uses scipy SLSQP for n>5 models (was silently broken)
   - All other logic, hyperparameters and fixes from v10 are preserved verbatim
-
-v10 changes vs v9:
-  - ADD: HybridMLPRegressor (arXiv:2601.02856) as 6th model in ensemble
-
-v9 changes vs v8:
-  - FIX: cold-start features, XGBoost FR removed, DNN retrain fix
 
 Usage: cd "INCOMO 3" && python scripts/final_pipeline_v11.py
 """
@@ -44,9 +41,8 @@ from src.models import (
     train_dnn,
     predict_dnn,
 )
-from src.models.mlp import HybridMLPRegressor, MLP_DEVICE
 from src.models.cnn_lstm import CNNLSTMRegressor, CNNLSTM_DEVICE
-from src.models.encoder_decoder import EncoderDecoderRegressor, ENCDEC_DEVICE
+from src.models.targets import _stl_trend
 from sklearn.preprocessing import StandardScaler
 
 try:
@@ -72,7 +68,7 @@ with open("config.yaml") as f:
 # 0. LOAD DATA + FEATURES
 # ══════════════════════════════════════════════════════════════════════════
 print("=" * 90)
-print("  FINAL PIPELINE v11 — ensemble: CB, LGB, XGB, EN, DNN, HMLP, CNNLSTM, ENCDEC")
+print("  FINAL PIPELINE v11 — ensemble: CB, LGB, XGB, EN, DNN, CNNLSTM")
 print("=" * 90)
 
 t0 = time.time()
@@ -81,7 +77,13 @@ x_train, y_train, x_test = load_data("data/raw")
 # v7 style: build features separately
 train_fe = build_features(pd.concat([x_train], axis=0), config)
 train_fe = train_fe.join(y_train[["fr_spot", "uk_spot"]])
-test_fe = build_features(x_test, config)
+
+# Build test features with 336h warmup tail from training to avoid partial
+# rolling windows on the first 14 days (all rolling windows are ≤ 336h).
+_WARMUP = 336
+_x_train_tail = x_train.iloc[-_WARMUP:]
+_test_with_warmup = build_features(pd.concat([_x_train_tail, x_test], axis=0), config)
+test_fe = _test_with_warmup.iloc[_WARMUP:].copy()
 
 print(f"  Data loaded in {time.time() - t0:.0f}s")
 print(f"  Train shape: {train_fe.shape}, Test shape: {test_fe.shape}")
@@ -96,11 +98,10 @@ print(
     f"  Train FR (full): {len(df_train)}, Train UK: {len(df_train_uk)}, "
     f"Val: {len(df_val)}, Test: {len(test_fe)}"
 )
-print(f"  DNN device: {DNN_DEVICE} | HybridMLP: {MLP_DEVICE}")
-print(f"  CNNLSTM: {CNNLSTM_DEVICE} | EncDec: {ENCDEC_DEVICE}")
+print(f"  DNN device: {DNN_DEVICE} | CNNLSTM: {CNNLSTM_DEVICE}")
 
 # ── Feature lists ─────────────────────────────────────────────────────────
-with open("outputs/feature_selection_v5_fr.json") as f:
+with open("data/outputs/feature_selection_v5_fr.json") as f:
     fs_v5 = json.load(f)
 
 feat_fr_27 = fs_v5["features"]
@@ -123,7 +124,7 @@ print(
     f"  FR features: {len(feat_fr_28)} (v7) → {len(feat_fr_v8)} (v8, +{len(V8_NEW_FR)} new)"
 )
 
-with open("outputs/uk_feature_research.json") as f:
+with open("data/outputs/uk_feature_research.json") as f:
     uk_research = json.load(f)
 feat_uk_confirmed = uk_research["confirmed_features"]
 feat_uk_v8 = feat_uk_confirmed + [f for f in V8_NEW_UK if f not in feat_uk_confirmed]
@@ -260,7 +261,85 @@ print(f"  UK CatBoost: RMSE={rmse_uk_cb:.2f}, +HBC={rmse_uk_cb_hbc:.2f}, iter={c
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 3. LightGBM models
+# 3a. DNN scaler setup + CNN-LSTM models (run first — spike detection)
+# ══════════════════════════════════════════════════════════════════════════
+print("\n" + "=" * 90)
+print(f"  3a. DNN/Sequence scaler + CNN-LSTM (lookback=48)")
+print("=" * 90)
+
+feat_dnn_final = [f for f in feat_dnn if f in df_train.columns]
+
+dnn_scaler_fr = StandardScaler()
+X_dnn_tr_fr = dnn_scaler_fr.fit_transform(
+    np.nan_to_num(df_train[feat_dnn_final].values, 0)
+)
+X_dnn_va_fr = dnn_scaler_fr.transform(np.nan_to_num(df_val[feat_dnn_final].values, 0))
+
+dnn_scaler_uk = StandardScaler()
+X_dnn_tr_uk = dnn_scaler_uk.fit_transform(
+    np.nan_to_num(df_train_uk[feat_dnn_final].values, 0)
+)
+X_dnn_va_uk = dnn_scaler_uk.transform(np.nan_to_num(df_val[feat_dnn_final].values, 0))
+
+print(f"  DNN/Sequence features: {len(feat_dnn_final)}")
+
+# Load best hyperparameters from YAML (updated by optimize_seq_models.py)
+with open("data/outputs/best_parameters.yaml") as f:
+    _seq_bp = yaml.safe_load(f)
+
+def _seq_model_params(country: str, model_name: str) -> dict:
+    """Extract model-specific params from best_parameters.yaml, stripping internal keys."""
+    p = dict(_seq_bp[country].get(model_name, {}))
+    p.pop("_best_rmse", None)
+    # Convert list to tuple for hidden_dims
+    if "hidden_dims" in p and isinstance(p["hidden_dims"], list):
+        p["hidden_dims"] = tuple(p["hidden_dims"])
+    return p
+
+SEQ_LOOKBACK = _seq_bp["shared"]["lookback"]
+
+X_tr_fr_seq = X_dnn_tr_fr[fr_stat["valid_tr"]]
+y_tr_fr_seq = fr_stat["y_dev_tr"][fr_stat["valid_tr"]].astype(np.float32)
+X_tr_uk_seq = X_dnn_tr_uk[valid_basis_tr]
+y_tr_uk_seq = y_basis_tr[valid_basis_tr].astype(np.float32)
+
+SEQ_COMMON = dict(
+    lookback=SEQ_LOOKBACK,
+    batch_size=_seq_bp["shared"]["batch_size"],
+    max_epochs=_seq_bp["shared"]["max_epochs"],
+    patience=_seq_bp["shared"]["patience"],
+    val_fraction=_seq_bp["shared"]["val_fraction"],
+    warmup_epochs=_seq_bp["shared"]["warmup_epochs"],
+    grad_clip=_seq_bp["shared"]["grad_clip"],
+    n_seeds=_seq_bp["shared"]["n_seeds"],
+    random_state=_seq_bp["shared"]["random_state"],
+)
+
+# ── FR CNN-LSTM ─────────────────────────────────────────────────────────
+_fr_hd = _seq_bp["fr"]["huber_delta"]
+cnnlstm_fr = CNNLSTMRegressor(
+    **_seq_model_params("fr", "CNNLSTM"), loss="huber", huber_delta=_fr_hd, **SEQ_COMMON,
+)
+cnnlstm_fr.fit(X_tr_fr_seq, y_tr_fr_seq)
+preds_fr_cnnlstm = fr_stat["rm_va"] + cnnlstm_fr.predict(X_dnn_va_fr)
+rmse_fr_cnnlstm = compute_rmse(fr_stat["spot_va"], preds_fr_cnnlstm)
+_, rmse_fr_cnnlstm_hbc = compute_hbc(preds_fr_cnnlstm, fr_stat["spot_va"], hours_va_fr)
+print(f"  CNN-LSTM FR: RMSE={rmse_fr_cnnlstm:.2f}, +HBC={rmse_fr_cnnlstm_hbc:.2f}, ep={cnnlstm_fr.best_epoch_}")
+
+# ── UK CNN-LSTM ─────────────────────────────────────────────────────────
+_uk_hd = _seq_bp["uk"]["huber_delta"]
+cnnlstm_uk = CNNLSTMRegressor(
+    **_seq_model_params("uk", "CNNLSTM"), loss="huber", huber_delta=_uk_hd, **SEQ_COMMON,
+)
+cnnlstm_uk.fit(X_tr_uk_seq, y_tr_uk_seq)
+preds_uk_cnnlstm = uk_moc_va + cnnlstm_uk.predict(X_dnn_va_uk)
+rmse_uk_cnnlstm = compute_rmse(uk_spot_va, preds_uk_cnnlstm)
+_, rmse_uk_cnnlstm_hbc = compute_hbc(preds_uk_cnnlstm, uk_spot_va, hours_va_uk)
+print(f"  CNN-LSTM UK: RMSE={rmse_uk_cnnlstm:.2f}, +HBC={rmse_uk_cnnlstm_hbc:.2f}, ep={cnnlstm_uk.best_epoch_}")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 3b. LightGBM models
 # ══════════════════════════════════════════════════════════════════════════
 preds_fr_lgb = None
 preds_uk_lgb = None
@@ -299,7 +378,7 @@ LGB_UK_PARAMS = {
 
 if HAS_LGB:
     print("\n" + "=" * 90)
-    print("  3. LightGBM models")
+    print("  3b. LightGBM models")
     print("=" * 90)
 
     lgb_fr = train_tree(
@@ -331,7 +410,7 @@ if HAS_LGB:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 3b. XGBoost models
+# 3c. XGBoost models
 # ══════════════════════════════════════════════════════════════════════════
 preds_fr_xgb = None
 preds_uk_xgb = None
@@ -370,22 +449,11 @@ XGB_UK_PARAMS = {
 
 if HAS_XGB:
     print("\n" + "=" * 90)
-    print("  3b. XGBoost models")
+    print("  3c. XGBoost models (UK only — FR XGB removed: hits max iters, 28 RMSE)")
     print("=" * 90)
 
-    xgb_fr = train_tree(
-        "xgboost",
-        XGB_FR_PARAMS,
-        df_train.loc[df_train.index[fr_stat["valid_tr"]], feat_fr],
-        fr_stat["y_dev_tr"][fr_stat["valid_tr"]],
-        df_val.loc[df_val.index[fr_stat["valid_va"]], feat_fr],
-        fr_stat["y_dev_va"][fr_stat["valid_va"]],
-        sample_weight=fr_stat["weights"][fr_stat["valid_tr"]],
-    )
-    preds_fr_xgb = fr_stat["rm_va"] + predict_tree(xgb_fr.model, df_val[feat_fr])
-    rmse_fr_xgb = compute_rmse(fr_stat["spot_va"], preds_fr_xgb)
-    _, rmse_fr_xgb_hbc = compute_hbc(preds_fr_xgb, fr_stat["spot_va"], hours_va_fr)
-    print(f"  XGB FR: RMSE={rmse_fr_xgb:.2f}, +HBC={rmse_fr_xgb_hbc:.2f}, iter={xgb_fr.best_iteration}")
+    # FR XGBoost removed: never converges on stationary target (hits 15000 iters,
+    # 28.34 raw RMSE), gets 0 weight in ensemble, only adds noise and training time.
 
     xgb_uk = train_tree(
         "xgboost",
@@ -402,10 +470,10 @@ if HAS_XGB:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 3c. Elastic Net models
+# 3d. Elastic Net models
 # ══════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 90)
-print("  3c. Elastic Net models")
+print("  3d. Elastic Net models")
 print("=" * 90)
 
 en_fr = train_elastic_net(
@@ -434,25 +502,11 @@ print(f"  EN UK: RMSE={rmse_uk_en:.2f}, +HBC={rmse_uk_en_hbc:.2f}, n_nonzero={en
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 3d. DNN models
+# 3e. DNN models
 # ══════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 90)
-print(f"  3d. DNN models ({len(feat_dnn)} features, PyTorch)")
+print(f"  3e. DNN models ({len(feat_dnn_final)} features, PyTorch)")
 print("=" * 90)
-
-feat_dnn_final = [f for f in feat_dnn if f in df_train.columns]
-
-dnn_scaler_fr = StandardScaler()
-X_dnn_tr_fr = dnn_scaler_fr.fit_transform(
-    np.nan_to_num(df_train[feat_dnn_final].values, 0)
-)
-X_dnn_va_fr = dnn_scaler_fr.transform(np.nan_to_num(df_val[feat_dnn_final].values, 0))
-
-dnn_scaler_uk = StandardScaler()
-X_dnn_tr_uk = dnn_scaler_uk.fit_transform(
-    np.nan_to_num(df_train_uk[feat_dnn_final].values, 0)
-)
-X_dnn_va_uk = dnn_scaler_uk.transform(np.nan_to_num(df_val[feat_dnn_final].values, 0))
 
 torch.manual_seed(42)
 np.random.seed(42)
@@ -486,134 +540,6 @@ print(f"  DNN UK: RMSE={rmse_uk_dnn:.2f}, +HBC={rmse_uk_dnn_hbc:.2f}, ep={dnn_uk
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 3e. HybridLinearMLP models
-# ══════════════════════════════════════════════════════════════════════════
-print("\n" + "=" * 90)
-print(f"  3e. HybridLinearMLP ({len(feat_dnn_final)} features, arXiv:2601.02856)")
-print("=" * 90)
-
-hmlp_fr = HybridMLPRegressor(
-    hidden_dims=(256, 128, 64), dropout=0.15, lr=2e-4, weight_decay=1e-4,
-    batch_size=128, max_epochs=500, patience=50, val_fraction=0.1,
-    loss="huber", huber_delta=10.0, warmup_epochs=20, grad_clip=1.0,
-    activation="gelu", residual=False, n_seeds=1, random_state=42,
-)
-hmlp_fr.fit(
-    X_dnn_tr_fr[fr_stat["valid_tr"]],
-    fr_stat["y_dev_tr"][fr_stat["valid_tr"]].astype(np.float32),
-)
-preds_fr_hmlp = fr_stat["rm_va"] + hmlp_fr.predict(X_dnn_va_fr)
-rmse_fr_hmlp = compute_rmse(fr_stat["spot_va"], preds_fr_hmlp)
-_, rmse_fr_hmlp_hbc = compute_hbc(preds_fr_hmlp, fr_stat["spot_va"], hours_va_fr)
-print(
-    f"  HybridMLP FR: RMSE={rmse_fr_hmlp:.2f}, +HBC={rmse_fr_hmlp_hbc:.2f}, "
-    f"best_ep={hmlp_fr.best_epoch_}"
-)
-
-hmlp_uk = HybridMLPRegressor(
-    hidden_dims=(512, 256, 128), dropout=0.25, lr=5e-4, weight_decay=1e-4,
-    batch_size=128, max_epochs=500, patience=50, val_fraction=0.1,
-    loss="mse", warmup_epochs=10, grad_clip=1.0,
-    activation="gelu", residual=False, n_seeds=3, random_state=42,
-)
-hmlp_uk.fit(
-    X_dnn_tr_uk[valid_basis_tr],
-    y_basis_tr[valid_basis_tr].astype(np.float32),
-)
-preds_uk_hmlp = uk_moc_va + hmlp_uk.predict(X_dnn_va_uk)
-rmse_uk_hmlp = compute_rmse(uk_spot_va, preds_uk_hmlp)
-_, rmse_uk_hmlp_hbc = compute_hbc(preds_uk_hmlp, uk_spot_va, hours_va_uk)
-print(
-    f"  HybridMLP UK: RMSE={rmse_uk_hmlp:.2f}, +HBC={rmse_uk_hmlp_hbc:.2f}, "
-    f"best_ep={hmlp_uk.best_epoch_}"
-)
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# 3f. Sequence models (LSTM, CNN, CNN-LSTM, TimeMLP, EncDec)
-# ══════════════════════════════════════════════════════════════════════════
-print("\n" + "=" * 90)
-print(f"  3f. Sequence models ({len(feat_dnn_final)} features, lookback=48)")
-print("=" * 90)
-
-# Load best hyperparameters from YAML (updated by optimize_seq_models.py)
-with open("outputs/best_parameters.yaml") as f:
-    _seq_bp = yaml.safe_load(f)
-
-def _seq_model_params(country: str, model_name: str) -> dict:
-    """Extract model-specific params from best_parameters.yaml, stripping internal keys."""
-    p = dict(_seq_bp[country].get(model_name, {}))
-    p.pop("_best_rmse", None)
-    # Convert list to tuple for hidden_dims
-    if "hidden_dims" in p and isinstance(p["hidden_dims"], list):
-        p["hidden_dims"] = tuple(p["hidden_dims"])
-    return p
-
-# Reuse scaled arrays from stage 3d (same scaler, same feature list — no refitting)
-SEQ_LOOKBACK = _seq_bp["shared"]["lookback"]
-
-X_tr_fr_seq = X_dnn_tr_fr[fr_stat["valid_tr"]]
-y_tr_fr_seq = fr_stat["y_dev_tr"][fr_stat["valid_tr"]].astype(np.float32)
-X_tr_uk_seq = X_dnn_tr_uk[valid_basis_tr]
-y_tr_uk_seq = y_basis_tr[valid_basis_tr].astype(np.float32)
-
-# Shared training params from YAML
-SEQ_COMMON = dict(
-    lookback=SEQ_LOOKBACK,
-    batch_size=_seq_bp["shared"]["batch_size"],
-    max_epochs=_seq_bp["shared"]["max_epochs"],
-    patience=_seq_bp["shared"]["patience"],
-    val_fraction=_seq_bp["shared"]["val_fraction"],
-    warmup_epochs=_seq_bp["shared"]["warmup_epochs"],
-    grad_clip=_seq_bp["shared"]["grad_clip"],
-    n_seeds=_seq_bp["shared"]["n_seeds"],
-    random_state=_seq_bp["shared"]["random_state"],
-)
-
-# ── FR sequence models ─────────────────────────────────────────────────────
-_fr_hd = _seq_bp["fr"]["huber_delta"]
-
-cnnlstm_fr = CNNLSTMRegressor(
-    **_seq_model_params("fr", "CNNLSTM"), loss="huber", huber_delta=_fr_hd, **SEQ_COMMON,
-)
-cnnlstm_fr.fit(X_tr_fr_seq, y_tr_fr_seq)
-preds_fr_cnnlstm = fr_stat["rm_va"] + cnnlstm_fr.predict(X_dnn_va_fr)
-rmse_fr_cnnlstm = compute_rmse(fr_stat["spot_va"], preds_fr_cnnlstm)
-_, rmse_fr_cnnlstm_hbc = compute_hbc(preds_fr_cnnlstm, fr_stat["spot_va"], hours_va_fr)
-print(f"  CNN-LSTM FR: RMSE={rmse_fr_cnnlstm:.2f}, +HBC={rmse_fr_cnnlstm_hbc:.2f}, ep={cnnlstm_fr.best_epoch_}")
-
-encdec_fr = EncoderDecoderRegressor(
-    **_seq_model_params("fr", "ENCDEC"), loss="huber", huber_delta=_fr_hd, **SEQ_COMMON,
-)
-encdec_fr.fit(X_tr_fr_seq, y_tr_fr_seq)
-preds_fr_encdec = fr_stat["rm_va"] + encdec_fr.predict(X_dnn_va_fr)
-rmse_fr_encdec = compute_rmse(fr_stat["spot_va"], preds_fr_encdec)
-_, rmse_fr_encdec_hbc = compute_hbc(preds_fr_encdec, fr_stat["spot_va"], hours_va_fr)
-print(f"  EncDec FR: RMSE={rmse_fr_encdec:.2f}, +HBC={rmse_fr_encdec_hbc:.2f}, ep={encdec_fr.best_epoch_}")
-
-# ── UK sequence models ─────────────────────────────────────────────────────
-_uk_hd = _seq_bp["uk"]["huber_delta"]
-
-cnnlstm_uk = CNNLSTMRegressor(
-    **_seq_model_params("uk", "CNNLSTM"), loss="huber", huber_delta=_uk_hd, **SEQ_COMMON,
-)
-cnnlstm_uk.fit(X_tr_uk_seq, y_tr_uk_seq)
-preds_uk_cnnlstm = uk_moc_va + cnnlstm_uk.predict(X_dnn_va_uk)
-rmse_uk_cnnlstm = compute_rmse(uk_spot_va, preds_uk_cnnlstm)
-_, rmse_uk_cnnlstm_hbc = compute_hbc(preds_uk_cnnlstm, uk_spot_va, hours_va_uk)
-print(f"  CNN-LSTM UK: RMSE={rmse_uk_cnnlstm:.2f}, +HBC={rmse_uk_cnnlstm_hbc:.2f}, ep={cnnlstm_uk.best_epoch_}")
-
-encdec_uk = EncoderDecoderRegressor(
-    **_seq_model_params("uk", "ENCDEC"), loss="huber", huber_delta=_uk_hd, **SEQ_COMMON,
-)
-encdec_uk.fit(X_tr_uk_seq, y_tr_uk_seq)
-preds_uk_encdec = uk_moc_va + encdec_uk.predict(X_dnn_va_uk)
-rmse_uk_encdec = compute_rmse(uk_spot_va, preds_uk_encdec)
-_, rmse_uk_encdec_hbc = compute_hbc(preds_uk_encdec, uk_spot_va, hours_va_uk)
-print(f"  EncDec UK: RMSE={rmse_uk_encdec:.2f}, +HBC={rmse_uk_encdec_hbc:.2f}, ep={encdec_uk.best_epoch_}")
-
-
-# ══════════════════════════════════════════════════════════════════════════
 # 4. ENSEMBLE — Per-regime weight optimization (5 regimes, SLSQP for n>5)
 # ══════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 90)
@@ -627,9 +553,7 @@ if preds_fr_xgb is not None:
     fr_models["XGB"] = preds_fr_xgb
 fr_models["EN"] = preds_fr_en
 fr_models["DNN"] = preds_fr_dnn
-fr_models["HMLP"] = preds_fr_hmlp
 fr_models["CNNLSTM"] = preds_fr_cnnlstm
-fr_models["ENCDEC"] = preds_fr_encdec
 
 uk_models = {"CB": preds_uk_cb}
 if preds_uk_lgb is not None:
@@ -638,9 +562,7 @@ if preds_uk_xgb is not None:
     uk_models["XGB"] = preds_uk_xgb
 uk_models["EN"] = preds_uk_en
 uk_models["DNN"] = preds_uk_dnn
-uk_models["HMLP"] = preds_uk_hmlp
 uk_models["CNNLSTM"] = preds_uk_cnnlstm
-uk_models["ENCDEC"] = preds_uk_encdec
 
 model_names = list(fr_models.keys())
 uk_model_names = list(uk_models.keys())
@@ -664,6 +586,16 @@ print(f"    +HBC={rmse_uk_ens_hbc:.2f}")
 rmse_fr_ens = compute_rmse(fr_stat["spot_va"], preds_fr_ens)
 rmse_uk_ens = compute_rmse(uk_spot_va, preds_uk_ens)
 print(f"\n  Combined SUM: {rmse_fr_ens_hbc + rmse_uk_ens_hbc:.2f}")
+
+# ── Honest OOS estimate ────────────────────────────────────────────────────
+# Equal-weight average, no HBC. Neither weights nor bias were optimised on
+# this data — closest proxy to what the Kaggle LB will show.
+_fr_equal = np.mean(list(fr_models.values()), axis=0)
+_uk_equal = np.mean(list(uk_models.values()), axis=0)
+_rmse_fr_honest = compute_rmse(fr_stat["spot_va"], _fr_equal)
+_rmse_uk_honest = compute_rmse(uk_spot_va, _uk_equal)
+print(f"\n  Honest OOS (equal weights, no HBC): FR={_rmse_fr_honest:.2f}  UK={_rmse_uk_honest:.2f}  SUM={_rmse_fr_honest + _rmse_uk_honest:.2f}")
+print(f"  Regime+HBC inflation vs honest:     {(rmse_fr_ens_hbc + rmse_uk_ens_hbc) - (_rmse_fr_honest + _rmse_uk_honest):+.2f}")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -706,8 +638,12 @@ print("=" * 90)
 
 all_data = pd.concat([train_fe, test_fe], axis=0)
 fr_la_all = all_data["fr_spot_la"]
-rm_fr_all = fr_la_all.ewm(span=240).mean().values
 rs_fr_all = fr_la_all.rolling(168, min_periods=24).std().values
+
+# Use STL(period=168) trend — same as prepare_stationary uses for train+val.
+# Fitting on train+test combined gives the cleanest trend for test inference.
+print("  Fitting STL trend on full train+test series...")
+rm_fr_all = _stl_trend(fr_la_all, period=168)
 
 n_full = len(train_fe)
 df_full_train = train_fe
@@ -754,17 +690,7 @@ if HAS_LGB:
         print(f"  FR LightGBM: retrained")
 
 preds_fr_test_xgb = None
-if HAS_XGB:
-    fr_xgb_needs = any(fr_regime_weights.get(r, {}).get("XGB", 0) > 0 for r in REGIMES)
-    if fr_xgb_needs:
-        xgb_fr_final = retrain_tree(
-            "xgboost", XGB_FR_PARAMS,
-            df_full_train.loc[df_full_train.index[valid_fr_full], feat_fr],
-            y_dev_fr_full[valid_fr_full], xgb_fr.best_iteration,
-            sample_weight=w_fr_full[valid_fr_full],
-        )
-        preds_fr_test_xgb = rm_fr_test + predict_tree(xgb_fr_final, df_test_pred[feat_fr])
-        print(f"  FR XGBoost: retrained")
+# FR XGBoost removed (never converges on stationary target, 28 RMSE, 0 ensemble weight)
 
 preds_fr_test_en = None
 fr_en_needs = any(fr_regime_weights.get(r, {}).get("EN", 0) > 0 for r in REGIMES)
@@ -799,38 +725,11 @@ if fr_dnn_needs:
     preds_fr_test_dnn = rm_fr_test + predict_dnn(dnn_fr_final, X_dnn_test_fr)
     print(f"  FR DNN: retrained ({retrain_ep_fr} epochs)")
 
-preds_fr_test_hmlp = None
-fr_hmlp_needs = any(fr_regime_weights.get(r, {}).get("HMLP", 0) > 0 for r in REGIMES)
-if fr_hmlp_needs:
-    hmlp_scaler_fr_full = StandardScaler()
-    X_hmlp_full_fr = hmlp_scaler_fr_full.fit_transform(
-        np.nan_to_num(
-            df_full_train.loc[df_full_train.index[valid_fr_full], feat_dnn_final].values, 0
-        )
-    )
-    X_hmlp_test_fr = hmlp_scaler_fr_full.transform(
-        np.nan_to_num(df_test_pred[feat_dnn_final].values, 0)
-    )
-    hmlp_fr_final = HybridMLPRegressor(
-        hidden_dims=(256, 128, 64), dropout=0.15, lr=2e-4, weight_decay=1e-4,
-        batch_size=128, max_epochs=hmlp_fr.best_epoch_ + 5,
-        patience=hmlp_fr.best_epoch_ + 5, val_fraction=0.05,
-        loss="huber", huber_delta=10.0, warmup_epochs=5, grad_clip=1.0,
-        activation="gelu", residual=False, n_seeds=1, random_state=42,
-    )
-    hmlp_fr_final.fit(X_hmlp_full_fr, y_dev_fr_full[valid_fr_full].astype(np.float32))
-    preds_fr_test_hmlp = rm_fr_test + hmlp_fr_final.predict(X_hmlp_test_fr)
-    print(f"  FR HybridMLP: retrained ({hmlp_fr.best_epoch_ + 5} epochs)")
+# ── FR CNN-LSTM retrain ─────────────────────────────────────────────────
+preds_fr_test_cnnlstm = None
+fr_cnnlstm_needs = any(fr_regime_weights.get(r, {}).get("CNNLSTM", 0) > 0 for r in REGIMES)
 
-# ── FR sequence model retrain (shared scaler) ──────────────────────────────
-# Fit scaler once on full training data, transform test once
-_seq_fr_full_needs = any(
-    any(fr_regime_weights.get(r, {}).get(k, 0) > 0 for r in REGIMES)
-    for k in ["CNNLSTM", "ENCDEC"]
-)
-preds_fr_test_cnnlstm = preds_fr_test_encdec = None
-
-if _seq_fr_full_needs:
+if fr_cnnlstm_needs:
     seq_scaler_fr_full = StandardScaler()
     X_seq_full_fr = seq_scaler_fr_full.fit_transform(
         np.nan_to_num(
@@ -846,38 +745,22 @@ if _seq_fr_full_needs:
         lookback=SEQ_LOOKBACK, batch_size=128, val_fraction=0.05,
         warmup_epochs=5, grad_clip=1.0, n_seeds=1, random_state=42,
     )
-
-    fr_cnnlstm_needs = any(fr_regime_weights.get(r, {}).get("CNNLSTM", 0) > 0 for r in REGIMES)
-    if fr_cnnlstm_needs:
-        _ep = cnnlstm_fr.best_epoch_ + 5
-        cnnlstm_fr_final = CNNLSTMRegressor(
-            cnn_channels=64, lstm_hidden=128, cnn_layers=2, lstm_layers=1, dropout=0.2, lr=5e-4,
-            max_epochs=_ep, patience=_ep, loss="huber", huber_delta=10.0, **SEQ_RETRAIN_COMMON,
-        )
-        cnnlstm_fr_final.fit(X_seq_full_fr, y_seq_fr_full)
-        preds_fr_test_cnnlstm = rm_fr_test + cnnlstm_fr_final.predict(X_seq_test_fr)
-        print(f"  FR CNN-LSTM: retrained ({_ep} epochs)")
-
-    fr_encdec_needs = any(fr_regime_weights.get(r, {}).get("ENCDEC", 0) > 0 for r in REGIMES)
-    if fr_encdec_needs:
-        _ep = encdec_fr.best_epoch_ + 5
-        encdec_fr_final = EncoderDecoderRegressor(
-            enc_hidden=128, dec_hidden=64, enc_layers=2, dropout=0.2, lr=5e-4,
-            max_epochs=_ep, patience=_ep, loss="huber", huber_delta=10.0, **SEQ_RETRAIN_COMMON,
-        )
-        encdec_fr_final.fit(X_seq_full_fr, y_seq_fr_full)
-        preds_fr_test_encdec = rm_fr_test + encdec_fr_final.predict(X_seq_test_fr)
-        print(f"  FR EncDec: retrained ({_ep} epochs)")
+    _ep = cnnlstm_fr.best_epoch_ + 5
+    cnnlstm_fr_final = CNNLSTMRegressor(
+        cnn_channels=64, lstm_hidden=128, cnn_layers=2, lstm_layers=1, dropout=0.2, lr=5e-4,
+        max_epochs=_ep, patience=_ep, loss="huber", huber_delta=10.0, **SEQ_RETRAIN_COMMON,
+    )
+    cnnlstm_fr_final.fit(X_seq_full_fr, y_seq_fr_full)
+    preds_fr_test_cnnlstm = rm_fr_test + cnnlstm_fr_final.predict(X_seq_test_fr)
+    print(f"  FR CNN-LSTM: retrained ({_ep} epochs)")
 
 # FR test ensemble
 fr_test_models = {"CB": preds_fr_test_cb}
-if preds_fr_test_lgb is not None:    fr_test_models["LGB"] = preds_fr_test_lgb
-if preds_fr_test_xgb is not None:    fr_test_models["XGB"] = preds_fr_test_xgb
-if preds_fr_test_en is not None:     fr_test_models["EN"] = preds_fr_test_en
-if preds_fr_test_dnn is not None:    fr_test_models["DNN"] = preds_fr_test_dnn
-if preds_fr_test_hmlp is not None:   fr_test_models["HMLP"] = preds_fr_test_hmlp
-if preds_fr_test_cnnlstm is not None: fr_test_models["CNNLSTM"] = preds_fr_test_cnnlstm
-if preds_fr_test_encdec is not None: fr_test_models["ENCDEC"] = preds_fr_test_encdec
+if preds_fr_test_lgb is not None:      fr_test_models["LGB"] = preds_fr_test_lgb
+if preds_fr_test_xgb is not None:      fr_test_models["XGB"] = preds_fr_test_xgb
+if preds_fr_test_en is not None:       fr_test_models["EN"] = preds_fr_test_en
+if preds_fr_test_dnn is not None:      fr_test_models["DNN"] = preds_fr_test_dnn
+if preds_fr_test_cnnlstm is not None:  fr_test_models["CNNLSTM"] = preds_fr_test_cnnlstm
 preds_fr_test = apply_regime_weights(fr_test_models, hours_test, fr_regime_weights)
 
 preds_fr_test_hbc = preds_fr_test + np.array([hbc_fr_final.get(h, 0) for h in hours_test])
@@ -962,37 +845,11 @@ if uk_dnn_needs:
     preds_uk_test_dnn = uk_moc_test + predict_dnn(dnn_uk_final, X_dnn_uk_test)
     print(f"  UK DNN: retrained ({retrain_ep_uk} epochs)")
 
-preds_uk_test_hmlp = None
-uk_hmlp_needs = any(uk_regime_weights.get(r, {}).get("HMLP", 0) > 0 for r in REGIMES)
-if uk_hmlp_needs:
-    hmlp_scaler_uk_full = StandardScaler()
-    X_hmlp_full_uk = hmlp_scaler_uk_full.fit_transform(
-        np.nan_to_num(
-            df_full_train_uk.loc[df_full_train_uk.index[valid_uk_full], feat_dnn_final].values, 0
-        )
-    )
-    X_hmlp_test_uk = hmlp_scaler_uk_full.transform(
-        np.nan_to_num(df_test_pred[feat_dnn_final].values, 0)
-    )
-    hmlp_uk_final = HybridMLPRegressor(
-        hidden_dims=(512, 256, 128), dropout=0.25, lr=5e-4, weight_decay=1e-4,
-        batch_size=128, max_epochs=hmlp_uk.best_epoch_ + 5,
-        patience=hmlp_uk.best_epoch_ + 5, val_fraction=0.05,
-        loss="mse", warmup_epochs=5, grad_clip=1.0,
-        activation="gelu", residual=False, n_seeds=1, random_state=42,
-    )
-    hmlp_uk_final.fit(X_hmlp_full_uk, y_basis_full[valid_uk_full].astype(np.float32))
-    preds_uk_test_hmlp = uk_moc_test + hmlp_uk_final.predict(X_hmlp_test_uk)
-    print(f"  UK HybridMLP: retrained ({hmlp_uk.best_epoch_ + 5} epochs)")
+# ── UK CNN-LSTM retrain ─────────────────────────────────────────────────
+preds_uk_test_cnnlstm = None
+uk_cnnlstm_needs = any(uk_regime_weights.get(r, {}).get("CNNLSTM", 0) > 0 for r in REGIMES)
 
-# ── UK sequence model retrain (shared scaler) ──────────────────────────────
-_seq_uk_full_needs = any(
-    any(uk_regime_weights.get(r, {}).get(k, 0) > 0 for r in REGIMES)
-    for k in ["CNNLSTM", "ENCDEC"]
-)
-preds_uk_test_cnnlstm = preds_uk_test_encdec = None
-
-if _seq_uk_full_needs:
+if uk_cnnlstm_needs:
     seq_scaler_uk_full = StandardScaler()
     X_seq_full_uk = seq_scaler_uk_full.fit_transform(
         np.nan_to_num(
@@ -1004,37 +861,26 @@ if _seq_uk_full_needs:
     )
     y_seq_uk_full = y_basis_full[valid_uk_full].astype(np.float32)
 
-    uk_cnnlstm_needs = any(uk_regime_weights.get(r, {}).get("CNNLSTM", 0) > 0 for r in REGIMES)
-    if uk_cnnlstm_needs:
-        _ep = cnnlstm_uk.best_epoch_ + 5
-        cnnlstm_uk_final = CNNLSTMRegressor(
-            cnn_channels=64, lstm_hidden=128, cnn_layers=2, lstm_layers=1, dropout=0.3, lr=3e-4,
-            max_epochs=_ep, patience=_ep, loss="huber", huber_delta=5.0, **SEQ_RETRAIN_COMMON,
-        )
-        cnnlstm_uk_final.fit(X_seq_full_uk, y_seq_uk_full)
-        preds_uk_test_cnnlstm = uk_moc_test + cnnlstm_uk_final.predict(X_seq_test_uk)
-        print(f"  UK CNN-LSTM: retrained ({_ep} epochs)")
-
-    uk_encdec_needs = any(uk_regime_weights.get(r, {}).get("ENCDEC", 0) > 0 for r in REGIMES)
-    if uk_encdec_needs:
-        _ep = encdec_uk.best_epoch_ + 5
-        encdec_uk_final = EncoderDecoderRegressor(
-            enc_hidden=128, dec_hidden=64, enc_layers=2, dropout=0.3, lr=3e-4,
-            max_epochs=_ep, patience=_ep, loss="huber", huber_delta=5.0, **SEQ_RETRAIN_COMMON,
-        )
-        encdec_uk_final.fit(X_seq_full_uk, y_seq_uk_full)
-        preds_uk_test_encdec = uk_moc_test + encdec_uk_final.predict(X_seq_test_uk)
-        print(f"  UK EncDec: retrained ({_ep} epochs)")
+    SEQ_RETRAIN_COMMON_UK = dict(
+        lookback=SEQ_LOOKBACK, batch_size=128, val_fraction=0.05,
+        warmup_epochs=5, grad_clip=1.0, n_seeds=1, random_state=42,
+    )
+    _ep = cnnlstm_uk.best_epoch_ + 5
+    cnnlstm_uk_final = CNNLSTMRegressor(
+        cnn_channels=64, lstm_hidden=128, cnn_layers=2, lstm_layers=1, dropout=0.3, lr=3e-4,
+        max_epochs=_ep, patience=_ep, loss="huber", huber_delta=5.0, **SEQ_RETRAIN_COMMON_UK,
+    )
+    cnnlstm_uk_final.fit(X_seq_full_uk, y_seq_uk_full)
+    preds_uk_test_cnnlstm = uk_moc_test + cnnlstm_uk_final.predict(X_seq_test_uk)
+    print(f"  UK CNN-LSTM: retrained ({_ep} epochs)")
 
 # UK test ensemble
 uk_test_models = {"CB": preds_uk_test_cb}
-if preds_uk_test_lgb is not None:    uk_test_models["LGB"] = preds_uk_test_lgb
-if preds_uk_test_xgb is not None:    uk_test_models["XGB"] = preds_uk_test_xgb
-if preds_uk_test_en is not None:     uk_test_models["EN"] = preds_uk_test_en
-if preds_uk_test_dnn is not None:    uk_test_models["DNN"] = preds_uk_test_dnn
-if preds_uk_test_hmlp is not None:   uk_test_models["HMLP"] = preds_uk_test_hmlp
-if preds_uk_test_cnnlstm is not None: uk_test_models["CNNLSTM"] = preds_uk_test_cnnlstm
-if preds_uk_test_encdec is not None: uk_test_models["ENCDEC"] = preds_uk_test_encdec
+if preds_uk_test_lgb is not None:      uk_test_models["LGB"] = preds_uk_test_lgb
+if preds_uk_test_xgb is not None:      uk_test_models["XGB"] = preds_uk_test_xgb
+if preds_uk_test_en is not None:       uk_test_models["EN"] = preds_uk_test_en
+if preds_uk_test_dnn is not None:      uk_test_models["DNN"] = preds_uk_test_dnn
+if preds_uk_test_cnnlstm is not None:  uk_test_models["CNNLSTM"] = preds_uk_test_cnnlstm
 preds_uk_test = apply_regime_weights(uk_test_models, hours_test, uk_regime_weights)
 
 preds_uk_test_hbc = preds_uk_test + np.array([hbc_uk_final.get(h, 0) for h in hours_test])
@@ -1062,21 +908,23 @@ uk_q_high = np.percentile(train_fe["uk_spot"].dropna(), 99.9)
 print(f"  FR clipping: [{fr_q_low:.1f}, {fr_q_high:.1f}]")
 print(f"  UK clipping: [{uk_q_low:.1f}, {uk_q_high:.1f}]")
 
+# Monthly HBC consistently beats standard 24-param HBC on validation
+# (24.26 vs 25.11). Use dampened variant for robustness (alpha=0.7).
 sub = pd.DataFrame({
     "id": test_fe.index,
-    "fr_spot": np.clip(preds_fr_test_hbc, fr_q_low, fr_q_high),
-    "uk_spot": np.clip(preds_uk_test_hbc, uk_q_low, uk_q_high),
+    "fr_spot": np.clip(preds_fr_test_damp, fr_q_low, fr_q_high),
+    "uk_spot": np.clip(preds_uk_test_damp, uk_q_low, uk_q_high),
 })
-sub.to_csv("outputs/submission_v11.csv", index=False)
-sub.to_csv("outputs/submission.csv", index=False)
-print(f"  submission_v11.csv — {len(sub)} rows")
+sub.to_csv("data/outputs/submission_v11.csv", index=False)
+sub.to_csv("data/outputs/submission.csv", index=False)
+print(f"  submission_v11.csv -- {len(sub)} rows")
 
 
 # ══════════════════════════════════════════════════════════════════════════
 # FINAL SUMMARY
 # ══════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 90)
-print("  FINAL SUMMARY — v11")
+print("  FINAL SUMMARY -- v11")
 print("=" * 90)
 
 print(f"\n  Validation scores (FR):")
@@ -1087,9 +935,7 @@ if preds_fr_xgb is not None:
     print(f"    XGBoost:     RMSE={rmse_fr_xgb:.2f}  +HBC={rmse_fr_xgb_hbc:.2f}")
 print(f"    Elastic Net: RMSE={rmse_fr_en:.2f}  +HBC={rmse_fr_en_hbc:.2f}")
 print(f"    DNN:         RMSE={rmse_fr_dnn:.2f}  +HBC={rmse_fr_dnn_hbc:.2f}")
-print(f"    HybridMLP:   RMSE={rmse_fr_hmlp:.2f}  +HBC={rmse_fr_hmlp_hbc:.2f}  ep={hmlp_fr.best_epoch_}")
 print(f"    CNN-LSTM:    RMSE={rmse_fr_cnnlstm:.2f}  +HBC={rmse_fr_cnnlstm_hbc:.2f}  ep={cnnlstm_fr.best_epoch_}")
-print(f"    EncDec:      RMSE={rmse_fr_encdec:.2f}  +HBC={rmse_fr_encdec_hbc:.2f}  ep={encdec_fr.best_epoch_}")
 print(f"    Regime Ens:  RMSE={rmse_fr_ens:.2f}  +HBC={rmse_fr_final:.2f}")
 for rname, rw in fr_regime_weights.items():
     rw_str = " / ".join(f"{nm}={rw.get(nm, 0):.2f}" for nm in model_names)
@@ -1103,9 +949,7 @@ if preds_uk_xgb is not None:
     print(f"    XGBoost:     RMSE={rmse_uk_xgb:.2f}  +HBC={rmse_uk_xgb_hbc:.2f}")
 print(f"    Elastic Net: RMSE={rmse_uk_en:.2f}  +HBC={rmse_uk_en_hbc:.2f}")
 print(f"    DNN:         RMSE={rmse_uk_dnn:.2f}  +HBC={rmse_uk_dnn_hbc:.2f}")
-print(f"    HybridMLP:   RMSE={rmse_uk_hmlp:.2f}  +HBC={rmse_uk_hmlp_hbc:.2f}  ep={hmlp_uk.best_epoch_}")
 print(f"    CNN-LSTM:    RMSE={rmse_uk_cnnlstm:.2f}  +HBC={rmse_uk_cnnlstm_hbc:.2f}  ep={cnnlstm_uk.best_epoch_}")
-print(f"    EncDec:      RMSE={rmse_uk_encdec:.2f}  +HBC={rmse_uk_encdec_hbc:.2f}  ep={encdec_uk.best_epoch_}")
 print(f"    Regime Ens:  RMSE={rmse_uk_ens:.2f}  +HBC={rmse_uk_final:.2f}")
 for rname, rw in uk_regime_weights.items():
     rw_str = " / ".join(f"{nm}={rw.get(nm, 0):.2f}" for nm in uk_model_names)
@@ -1118,12 +962,104 @@ print(f"    UK: {rmse_uk_final:.2f}")
 print(f"\n  Test predictions (Submit A):")
 print(f"    FR: mean={preds_fr_test_hbc.mean():.1f}, std={preds_fr_test_hbc.std():.1f}")
 print(f"    UK: mean={preds_uk_test_hbc.mean():.1f}, std={preds_uk_test_hbc.std():.1f}")
-print(f"\n  Submission: outputs/submission_v11.csv")
+print(f"\n  Submission: data/outputs/submission_v11.csv")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# RESIDUAL ANALYSIS
+# ══════════════════════════════════════════════════════════════════════════
+print("\n" + "=" * 90)
+print("  RESIDUAL ANALYSIS")
+print("=" * 90)
+
+y_fr_val = fr_stat["spot_va"]
+y_uk_val = uk_spot_va
+
+# Collect all model predictions
+fr_preds_all = {"CB": preds_fr_cb, "EN": preds_fr_en, "DNN": preds_fr_dnn, "CNNLSTM": preds_fr_cnnlstm}
+if preds_fr_lgb is not None:
+    fr_preds_all["LGB"] = preds_fr_lgb
+if preds_fr_xgb is not None:
+    fr_preds_all["XGB"] = preds_fr_xgb
+fr_preds_all["Ensemble"] = preds_fr_ens
+
+uk_preds_all = {"CB": preds_uk_cb, "EN": preds_uk_en, "DNN": preds_uk_dnn, "CNNLSTM": preds_uk_cnnlstm}
+if preds_uk_lgb is not None:
+    uk_preds_all["LGB"] = preds_uk_lgb
+if preds_uk_xgb is not None:
+    uk_preds_all["XGB"] = preds_uk_xgb
+uk_preds_all["Ensemble"] = preds_uk_ens
+
+# ── Per-model RMSE table ─────────────────────────────────────────────────
+print(f"\n  Per-model RMSE (FR):")
+print(f"    {'Model':<12} {'Raw RMSE':>10} {'+HBC RMSE':>10}")
+print(f"    {'-'*35}")
+for nm, pred in fr_preds_all.items():
+    raw = compute_rmse(y_fr_val, pred)
+    _, hbc_val = compute_hbc(pred, y_fr_val, hours_va_fr)
+    print(f"    {nm:<12} {raw:>10.2f} {hbc_val:>10.2f}")
+
+print(f"\n  Per-model RMSE (UK):")
+print(f"    {'Model':<12} {'Raw RMSE':>10} {'+HBC RMSE':>10}")
+print(f"    {'-'*35}")
+for nm, pred in uk_preds_all.items():
+    raw = compute_rmse(y_uk_val, pred)
+    _, hbc_val = compute_hbc(pred, y_uk_val, hours_va_uk)
+    print(f"    {nm:<12} {raw:>10.2f} {hbc_val:>10.2f}")
+
+# ── Residual correlation matrix ──────────────────────────────────────────
+fr_base_models = {k: v for k, v in fr_preds_all.items() if k != "Ensemble"}
+uk_base_models = {k: v for k, v in uk_preds_all.items() if k != "Ensemble"}
+
+fr_resid_df = pd.DataFrame({nm: pred - y_fr_val for nm, pred in fr_base_models.items()})
+uk_resid_df = pd.DataFrame({nm: pred - y_uk_val for nm, pred in uk_base_models.items()})
+
+print(f"\n  FR residual correlation matrix:")
+fr_corr = fr_resid_df.corr().round(3)
+col_names = list(fr_corr.columns)
+print(f"    {'':>12}" + "".join(f"{c:>10}" for c in col_names))
+for row_nm, row in fr_corr.iterrows():
+    print(f"    {row_nm:<12}" + "".join(f"{v:>10.3f}" for v in row))
+
+print(f"\n  UK residual correlation matrix:")
+uk_corr = uk_resid_df.corr().round(3)
+col_names_uk = list(uk_corr.columns)
+print(f"    {'':>12}" + "".join(f"{c:>10}" for c in col_names_uk))
+for row_nm, row in uk_corr.iterrows():
+    print(f"    {row_nm:<12}" + "".join(f"{v:>10.3f}" for v in row))
+
+# ── Contribution to ensemble RMSE ────────────────────────────────────────
+ens_resid_fr = preds_fr_ens - y_fr_val
+ens_std_fr = np.std(ens_resid_fr)
+
+ens_resid_uk = preds_uk_ens - y_uk_val
+ens_std_uk = np.std(ens_resid_uk)
+
+print(f"\n  FR -- contribution to ensemble RMSE (raw={rmse_fr_ens:.2f})")
+print(f"    {'Model':<12} {'Indiv RMSE':>12} {'Corr w/Ens':>12} {'Contrib %':>10}")
+print(f"    {'-'*50}")
+for nm, pred in fr_base_models.items():
+    resid = pred - y_fr_val
+    r = float(np.corrcoef(resid, ens_resid_fr)[0, 1])
+    contrib = r * np.std(resid) / ens_std_fr * 100
+    print(f"    {nm:<12} {compute_rmse(y_fr_val, pred):>12.2f} {r:>12.3f} {contrib:>9.1f}%")
+
+print(f"\n  UK -- contribution to ensemble RMSE (raw={rmse_uk_ens:.2f})")
+print(f"    {'Model':<12} {'Indiv RMSE':>12} {'Corr w/Ens':>12} {'Contrib %':>10}")
+print(f"    {'-'*50}")
+for nm, pred in uk_base_models.items():
+    resid = pred - y_uk_val
+    r = float(np.corrcoef(resid, ens_resid_uk)[0, 1])
+    contrib = r * np.std(resid) / ens_std_uk * 100
+    print(f"    {nm:<12} {compute_rmse(y_uk_val, pred):>12.2f} {r:>12.3f} {contrib:>9.1f}%")
+
+print("=" * 90)
+
 
 results = {
     "version": "v11",
     "fr": {
-        "approach": "stationary_ema240h_v11_12models",
+        "approach": "stationary_ema240h_v11_6models",
         "catboost_rmse": rmse_fr_cb,
         "catboost_rmse_hbc": rmse_fr_cb_hbc,
         "regime_ensemble_rmse": float(rmse_fr_ens),
@@ -1151,7 +1087,7 @@ results = {
     "hbc_uk": {str(k): v for k, v in hbc_uk_final.items()},
 }
 
-with open("outputs/final_pipeline_v11_results.json", "w") as f:
+with open("data/outputs/final_pipeline_v11_results.json", "w") as f:
     json.dump(results, f, indent=2, default=str)
 
 print(f"\n  Total time: {time.time() - t0:.0f}s")

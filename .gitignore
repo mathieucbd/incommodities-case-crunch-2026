@@ -16,8 +16,8 @@ data/raw/
 data/processed/
 
 # Model artifacts
-outputs/models/
-outputs/predictions/
+data/outputs/models/
+data/outputs/predictions/
 catboost_info/
 
 # Notebooks checkpoints & executed copies
