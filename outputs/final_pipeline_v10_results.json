@@ -1,0 +1,168 @@
+{
+  "fr": {
+    "approach": "stationary_ema240h_v10_hybrid_mlp",
+    "catboost_rmse": 17.206769843877712,
+    "catboost_rmse_hbc": 17.022604650507454,
+    "lightgbm_rmse": 17.725626435937414,
+    "hybrid_mlp_rmse": 17.76084093262058,
+    "hybrid_mlp_rmse_hbc": 17.00679200263153,
+    "hybrid_mlp_best_epoch": 20,
+    "regime_ensemble_rmse": 17.206769843877712,
+    "final_rmse_hbc": 17.022604650507454,
+    "regime_weights": {
+      "night": {
+        "CB": 1.0
+      },
+      "morning": {
+        "CB": 1.0
+      },
+      "day": {
+        "CB": 1.0
+      },
+      "peak": {
+        "CB": 1.0
+      },
+      "late": {
+        "CB": 1.0
+      }
+    },
+    "features": [
+      "fr_spot_la_roll_168h_mean",
+      "fr_residual_zscore_14d",
+      "uk_residual_zscore_14d",
+      "fr_spot_la_deviation_168h",
+      "continental_residual_load",
+      "euro_scarcity_ratio",
+      "wind_nuke_deviation_gap",
+      "fr_residual_change_24h",
+      "uk_spot_la_deviation_168h",
+      "uk_price_per_mw_7d",
+      "uk_spot_la_roll_168h_std",
+      "fr_spot_la_deviation_24h",
+      "fr_residual_ramp_3h",
+      "de_residual_load",
+      "fr_load_roll_168h_mean",
+      "carbon_to_gas_ratio",
+      "fr_mean_reversion_strength",
+      "uk_load_change_24h",
+      "uk_spot_la_roll_168h_mean",
+      "doy_cos",
+      "fr_spot_la_roll_168h_std",
+      "fr_dynamic_marginal",
+      "de_gas",
+      "uk_nuclear_avail_ratio",
+      "uk_load_roll_168h_mean",
+      "ntc_dk1-uk_f",
+      "fr_gas_roll_168h_mean",
+      "X_fr_spot_la_roll_168h_mean_x_uk_price_per_mw_7d"
+    ],
+    "params": {
+      "loss_function": "RMSE",
+      "eval_metric": "RMSE",
+      "iterations": 15000,
+      "learning_rate": 0.059,
+      "depth": 3,
+      "l2_leaf_reg": 4.42,
+      "subsample": 0.533,
+      "colsample_bylevel": 0.228,
+      "min_child_samples": 14,
+      "random_strength": 0.9,
+      "random_seed": 42,
+      "use_best_model": true
+    }
+  },
+  "uk": {
+    "approach": "basis_full",
+    "catboost_rmse": 10.034459511598065,
+    "catboost_rmse_hbc": 9.873058628543797,
+    "lightgbm_rmse": 10.4866384434427,
+    "hybrid_mlp_rmse": 12.100559524854535,
+    "hybrid_mlp_rmse_hbc": 10.628267371986018,
+    "hybrid_mlp_best_epoch": 42,
+    "regime_ensemble_rmse": 10.034459511598065,
+    "final_rmse_hbc": 9.873058628543797,
+    "regime_weights": {
+      "night": {
+        "CB": 1.0
+      },
+      "morning": {
+        "CB": 1.0
+      },
+      "day": {
+        "CB": 1.0
+      },
+      "peak": {
+        "CB": 1.0
+      },
+      "late": {
+        "CB": 1.0
+      }
+    },
+    "n_features": 150,
+    "params": {
+      "loss_function": "MAE",
+      "eval_metric": "RMSE",
+      "iterations": 15000,
+      "learning_rate": 0.03,
+      "depth": 8,
+      "l2_leaf_reg": 5,
+      "colsample_bylevel": 0.8,
+      "subsample": 0.8,
+      "random_seed": 42,
+      "use_best_model": true
+    }
+  },
+  "combined_sum_hbc": 26.89566327905125,
+  "hbc_fr": {
+    "0": 1.013818082665921,
+    "1": 2.517507674404361,
+    "2": 3.2084580504273403,
+    "3": 2.8716764710051104,
+    "4": 1.498669677523698,
+    "5": 2.237583409902737,
+    "6": 1.1548992758898093,
+    "7": 4.004108820867903,
+    "8": 2.8317815253908187,
+    "9": -0.8789983854034382,
+    "10": -1.5458420694992914,
+    "11": -0.184990651249789,
+    "12": 1.5647238401948318,
+    "13": 1.8732760884363513,
+    "14": 2.6490315547842083,
+    "15": 2.7833909267639045,
+    "16": 2.268108059769021,
+    "17": -0.03743803613075149,
+    "18": -3.618467150256458,
+    "19": -4.107473464101093,
+    "20": -5.410909467624861,
+    "21": -1.7028034757598383,
+    "22": 0.9392657128964296,
+    "23": -0.8279428278904619
+  },
+  "hbc_uk": {
+    "0": -2.7251952386142624,
+    "1": -1.56809120572977,
+    "2": -1.0441910905975942,
+    "3": -0.08117522479172472,
+    "4": -0.038760524529386234,
+    "5": -0.9887843363184274,
+    "6": -2.253041351700444,
+    "7": -0.45806820636090023,
+    "8": -1.1398109032191521,
+    "9": 1.6447356503990624,
+    "10": 2.4555200974203726,
+    "11": 2.026531910971438,
+    "12": 2.7343498165516933,
+    "13": 4.005427113038033,
+    "14": 2.2125982497669776,
+    "15": 1.5707575766659418,
+    "16": 0.23372780017176434,
+    "17": 0.4304092443322526,
+    "18": -0.20824968341473887,
+    "19": 0.9115401983470217,
+    "20": 2.092383410815691,
+    "21": 1.7227751930671382,
+    "22": 0.06659227117158387,
+    "23": -2.522707278961706
+  }
+}

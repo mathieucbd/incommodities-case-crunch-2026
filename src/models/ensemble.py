@@ -85,6 +85,29 @@ def optimize_regime_weights(models_dict, actual, hours, label):
                                         "w": {names[0]: round(w1, 1), names[1]: round(w2, 1),
                                               names[2]: round(w3, 1), names[3]: round(w4, 1),
                                               names[4]: w5}}
+        else:
+            # n > 5: use scipy SLSQP constrained optimization (simplex: w>=0, sum=1)
+            from scipy.optimize import minimize
+            P = np.stack([p[nm] for nm in names], axis=1)  # (N_regime, n)
+
+            def _obj(w):
+                return np.sqrt(np.mean((P @ w - a) ** 2))
+
+            w0 = np.ones(n) / n
+            res = minimize(
+                _obj, w0, method="SLSQP",
+                bounds=[(0.0, 1.0)] * n,
+                constraints=[{"type": "eq", "fun": lambda w: w.sum() - 1.0}],
+                options={"maxiter": 1000, "ftol": 1e-9},
+            )
+            w_opt = np.clip(res.x, 0, 1)
+            w_opt = w_opt / w_opt.sum()
+            w_rounded = np.round(w_opt, 2)
+            w_rounded[-1] = round(1.0 - float(w_rounded[:-1].sum()), 2)
+            best = {
+                "rmse": _obj(w_opt),
+                "w": {nm: float(w_rounded[i]) for i, nm in enumerate(names)},
+            }
 
         regime_weights[rname] = best["w"]
         ens_preds[rmask] = sum(best["w"].get(nm, 0) * p[nm] for nm in names)
