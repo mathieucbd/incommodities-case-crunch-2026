@@ -1,0 +1,28 @@
+shared:
+  lookback: 24
+  batch_size: 256
+  max_epochs: 150
+  patience: 20
+  val_fraction: 0.1
+  warmup_epochs: 5
+  grad_clip: 1.0
+  n_seeds: 1
+  random_state: 42
+fr:
+  huber_delta: 4.332893475050118
+  CNNLSTM:
+    cnn_channels: 32
+    lstm_hidden: 64
+    cnn_layers: 1
+    lstm_layers: 1
+    dropout: 0.2
+    lr: 0.0005
+uk:
+  huber_delta: 11.262161324291945
+  CNNLSTM:
+    cnn_channels: 32
+    lstm_hidden: 64
+    cnn_layers: 1
+    lstm_layers: 1
+    dropout: 0.2
+    lr: 0.0003

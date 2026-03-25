@@ -91,6 +91,7 @@ def _build_features_impl(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     df = _add_uk_island_features(df, cfg)
     df = _add_regime_features(df)
     df = _add_advanced_price_proxies(df, cfg)
+    df = _add_daily_renewable_surplus_features(df)
 
     # Defragment the DataFrame to avoid PerformanceWarning
     df = df.copy()
@@ -1654,6 +1655,40 @@ def _add_regime_features(df: pd.DataFrame) -> pd.DataFrame:
         gas.rolling(168, min_periods=48).corr(fr_la)
     )
 
+    # ------------------------------------------------------------------
+    # F. Gas price regime: relative gas price vs trailing 1-year average
+    #    Captures the crisis↔normal transition without lookahead.
+    #    Crisis (2022-mid-2023): gas ~200+ EUR/MWh → this ratio > 2
+    #    Post-crisis (2024+):    gas ~35-50 EUR/MWh → this ratio < 0.5
+    #    XGBoost can learn "when ratio < 0.7, renewables dominate price
+    #    formation; when ratio > 1.5, gas marginal cost sets the price."
+    # ------------------------------------------------------------------
+    fr_gas  = _safe_col(df, "fr_gas").ffill()
+    uk_gas  = _safe_col(df, "uk_gas").ffill()
+    nl_gas  = gas.ffill()
+
+    # Trailing 1-year rolling mean (8760h = 365 days)
+    fr_gas_1y  = fr_gas.rolling(8760, min_periods=168).mean()
+    uk_gas_1y  = uk_gas.rolling(8760, min_periods=168).mean()
+    nl_gas_1y  = nl_gas.rolling(8760, min_periods=168).mean()
+
+    # Relative gas price (>1 = expensive vs history, <1 = cheap vs history)
+    df["fr_gas_vs_1y_avg"]  = fr_gas  / fr_gas_1y.clip(lower=0.1)
+    df["uk_gas_vs_1y_avg"]  = uk_gas  / uk_gas_1y.clip(lower=0.1)
+    df["nl_gas_vs_1y_avg"]  = nl_gas  / nl_gas_1y.clip(lower=0.1)
+
+    # Binary crisis regime flag (gas > 2x 1-year average)
+    df["fr_gas_crisis_regime"] = (df["fr_gas_vs_1y_avg"] > 2.0).astype(np.int8)
+    df["uk_gas_crisis_regime"] = (df["uk_gas_vs_1y_avg"] > 2.0).astype(np.int8)
+
+    # Thermal gap interaction: importance of gas depends on its relative price
+    df["fr_thermal_gap_x_gas_regime"] = (
+        fr_thermal_gap * df["fr_gas_vs_1y_avg"].clip(upper=5)
+    )
+    df["uk_thermal_gap_x_gas_regime"] = (
+        uk_thermal_gap * df["uk_gas_vs_1y_avg"].clip(upper=5)
+    )
+
     return df
 
 
@@ -1807,3 +1842,98 @@ def _add_advanced_price_proxies(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     df["uk_basis_v2_roll_24h_mean"] = df["uk_basis_v2"].rolling(24, min_periods=1).mean()
 
     return df.copy()  # defragment after 290+ column assignments
+
+
+# ---------------------------------------------------------------------------
+# Cat 31 -- Daily renewable surplus / deficit features (game-changer)
+#
+# Error analysis showed that V15 fails catastrophically on solar-surplus days
+# (e.g. 2024-06-26: entire day of negative prices, model predicted +50-75).
+# The model has no signal for "today is a renewable-surplus day across all 24h".
+# All _f forecast columns are D-1 published → no lookahead.
+# ---------------------------------------------------------------------------
+
+def _add_daily_renewable_surplus_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute daily aggregated renewable vs demand features.
+
+    Groups hourly _f forecast columns by calendar date and broadcasts the
+    daily aggregate back to every hour of that day.  All inputs are day-ahead
+    forecasts published before the auction (no look-ahead).
+    """
+    dt = pd.to_datetime(df["datetime_CET"])
+    date_key = dt.dt.date.astype(str)
+
+    fr_solar  = _safe_col(df, "fr_solar_f")
+    fr_wind   = _safe_col(df, "fr_wind_f")
+    fr_load   = df["fr_load_f"].clip(lower=1)
+    fr_nuke   = _safe_col(df, "fr_nuclear_avcap_f")
+    fr_resid  = fr_load - fr_solar - fr_wind          # residual load: <0 => renewable surplus
+
+    uk_wind   = _safe_col(df, "uk_wind_f")
+    uk_load   = _safe_col(df, "uk_load_f").clip(lower=1)
+    uk_resid  = uk_load - uk_wind
+
+    tmp = pd.DataFrame({
+        "dk": date_key,
+        "fr_solar": fr_solar, "fr_wind": fr_wind,
+        "fr_load": fr_load,   "fr_resid": fr_resid, "fr_nuke": fr_nuke,
+        "uk_wind": uk_wind,   "uk_load": uk_load,   "uk_resid": uk_resid,
+    })
+
+    # ── France daily features ─────────────────────────────────────────────────
+    # Renewable coverage ratio: >1 means more renewable energy than demand
+    daily_fr_solar_sum  = tmp.groupby("dk")["fr_solar"].transform("sum")
+    daily_fr_wind_sum   = tmp.groupby("dk")["fr_wind"].transform("sum")
+    daily_fr_load_sum   = tmp.groupby("dk")["fr_load"].transform("sum")
+    daily_fr_load_min   = tmp.groupby("dk")["fr_load"].transform("min").clip(lower=1)
+    daily_fr_solar_peak = tmp.groupby("dk")["fr_solar"].transform("max")
+    daily_fr_wind_mean  = tmp.groupby("dk")["fr_wind"].transform("mean")
+    daily_fr_nuke_mean  = tmp.groupby("dk")["fr_nuke"].transform("mean")
+
+    # Residual load statistics
+    daily_fr_resid_min  = tmp.groupby("dk")["fr_resid"].transform("min")
+    daily_fr_resid_mean = tmp.groupby("dk")["fr_resid"].transform("mean")
+    daily_fr_neg_hours  = tmp.groupby("dk")["fr_resid"].transform(lambda x: (x < 0).sum().astype(float))
+    daily_fr_surplus    = tmp.groupby("dk")["fr_resid"].transform(lambda x: (-x).clip(lower=0).sum())
+
+    df["fr_daily_re_coverage"]       = (daily_fr_solar_sum + daily_fr_wind_sum) / daily_fr_load_sum
+    df["fr_daily_residual_load_min"] = daily_fr_resid_min
+    df["fr_daily_residual_load_mean"]= daily_fr_resid_mean
+    df["fr_daily_solar_peak"]        = daily_fr_solar_peak
+    df["fr_daily_wind_mean"]         = daily_fr_wind_mean
+    df["fr_daily_nuclear_mean"]      = daily_fr_nuke_mean
+    # Solar peak vs minimum load: high = midday solar glut risk
+    df["fr_solar_peak_vs_load_min"]  = daily_fr_solar_peak / daily_fr_load_min
+    # Count and surplus removed — zero importance in XGBoost (redundant with
+    # fr_daily_residual_load_min and fr_daily_re_coverage)
+    # Nuclear mean relative to load: low = more gas/imports needed
+    df["fr_nuclear_load_ratio_daily"]= daily_fr_nuke_mean / daily_fr_load_sum.clip(lower=1) * 24
+
+    # ── France nuclear heat stress (river temp x nuclear capacity) ────────────
+    # Curtailment threshold is 25 C, but stress builds from ~22 C.
+    # When river temp rises, nuclear output must be cut -> price spikes.
+    river_temp = _safe_col(df, "fr_max_river_temp")
+    heat_stress = (river_temp - 22.0).clip(lower=0)                          # 0 below 22 C
+    df["fr_nuclear_heat_stress"]     = heat_stress * (daily_fr_nuke_mean / 63000.0)
+    df["fr_heat_stress_resid_load"]  = heat_stress * daily_fr_resid_mean / 10000.0
+
+    # ── UK daily features ─────────────────────────────────────────────────────
+    daily_uk_wind_sum   = tmp.groupby("dk")["uk_wind"].transform("sum")
+    daily_uk_load_sum   = tmp.groupby("dk")["uk_load"].transform("sum")
+    daily_uk_resid_min  = tmp.groupby("dk")["uk_resid"].transform("min")
+    daily_uk_resid_mean = tmp.groupby("dk")["uk_resid"].transform("mean")
+    df["uk_daily_wind_penetration"]  = daily_uk_wind_sum / daily_uk_load_sum
+    df["uk_daily_residual_load_min"] = daily_uk_resid_min
+    df["uk_daily_residual_load_mean"]= daily_uk_resid_mean
+    # uk_negative_resid_hours removed — zero importance (redundant with uk_daily_residual_load_min)
+
+    # ── Continent-wide daily surplus (cross-border price suppression) ─────────
+    de_wind  = _safe_col(df, "de_wind_f")
+    de_solar = _safe_col(df, "de_solar_f")
+    de_load  = _safe_col(df, "de_load_f").clip(lower=1)
+    tmp["cont_surplus"] = (fr_solar + fr_wind - fr_load +
+                           de_wind + de_solar - de_load)
+    daily_cont_surplus = tmp.groupby("dk")["cont_surplus"].transform("mean")
+    df["fr_cont_daily_surplus_mean"] = daily_cont_surplus
+
+    return df

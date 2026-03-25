@@ -1,14 +1,17 @@
 """CNN-LSTM hybrid model for electricity price forecasting.
 
 Architecture:
-  1. CNN stage: stacked Conv1d blocks extract local temporal features across
-     the lookback window (short-range patterns: hourly fluctuations, ramps).
-  2. LSTM stage: takes the CNN output sequence and captures long-range temporal
-     dependencies (daily cycles, weekly patterns, regime changes).
+  1. CNN stage: 1-2 Conv1d blocks extract local temporal features across
+     the lookback window (short-range patterns: hourly ramps, spike onset).
+  2. LSTM stage: captures sequential dependencies across the lookback
+     (daily cycle, multi-hour regime shifts).
 
-The key insight is that CNN feature extraction reduces the effective input
-dimensionality for the LSTM, allowing the recurrent stage to focus on
-temporal structure rather than raw feature interactions.
+Spike-detection focus:
+  - Lookback 24h (1 day) covers the onset patterns that precede spikes
+    (nuclear trip → high load hour, gas squeeze → peak hours).
+  - Small architecture (cnn_channels=32, lstm_hidden=64) keeps inference fast.
+  - On-the-fly sequence generation in the DataLoader: O(N×F) memory instead
+    of O(N×lookback×F) — eliminates the ~800 MB upfront allocation.
 """
 
 from __future__ import annotations
@@ -16,8 +19,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, Dataset
 from sklearn.base import BaseEstimator, RegressorMixin
-from torch.utils.data import DataLoader, TensorDataset
 
 # ── Device selection ──────────────────────────────────────────────────────────
 if torch.backends.mps.is_available():
@@ -28,19 +31,39 @@ else:
     CNNLSTM_DEVICE = torch.device("cpu")
 
 
-# ── Sequence utilities ────────────────────────────────────────────────────────
+# ── On-the-fly sequence Dataset ───────────────────────────────────────────────
 
-def _make_sequences(X: np.ndarray, lookback: int) -> np.ndarray:
-    """(N, F) → (N, lookback, F) with zero-padding at the start."""
-    pad = np.zeros((lookback - 1, X.shape[1]), dtype=X.dtype)
-    padded = np.vstack([pad, X])
-    return np.stack([padded[i:i + lookback] for i in range(len(X))])
+class _SeqDataset(Dataset):
+    """Generates (lookback, F) windows on the fly — avoids precomputing all seqs.
 
+    First (lookback-1) samples are zero-padded from the left.
+    """
+
+    def __init__(self, X: np.ndarray, y: np.ndarray, lookback: int) -> None:
+        self.X = torch.from_numpy(X.astype(np.float32))
+        self.y = torch.from_numpy(y.astype(np.float32))
+        self.lookback = lookback
+        self.n_features = X.shape[1]
+
+    def __len__(self) -> int:
+        return len(self.y)
+
+    def __getitem__(self, i: int) -> tuple[torch.Tensor, torch.Tensor]:
+        start = i - self.lookback + 1
+        if start >= 0:
+            seq = self.X[start : i + 1]
+        else:
+            pad = torch.zeros(-start, self.n_features)
+            seq = torch.cat([pad, self.X[: i + 1]], dim=0)
+        return seq, self.y[i]
+
+
+# ── Predict helper: precompute small batch for inference ─────────────────────
 
 def _make_sequences_notail(X_ext: np.ndarray, lookback: int) -> np.ndarray:
-    """(N + lookback - 1, F) → (N, lookback, F) — tail already prepended, no padding."""
+    """(N + lookback - 1, F) → (N, lookback, F). Tail prepended by caller."""
     N = len(X_ext) - lookback + 1
-    return np.stack([X_ext[i:i + lookback] for i in range(N)])
+    return np.stack([X_ext[i : i + lookback] for i in range(N)])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -50,24 +73,23 @@ def _make_sequences_notail(X_ext: np.ndarray, lookback: int) -> np.ndarray:
 class ElecCNNLSTM(nn.Module):
     """CNN feature extractor followed by LSTM temporal modelling.
 
-    forward(x) takes (B, T, F) and returns (B,).
+    forward(x): (B, T, F) → (B,)
 
-    CNN operates on (B, F, T) (channels-first), then the output is transposed
-    back to (B, T, cnn_channels) before being fed to the LSTM.
+    CNN operates on (B, F, T) (channels-first), then transposed back to
+    (B, T, cnn_channels) for the LSTM.
     """
 
     def __init__(
         self,
         input_size: int,
-        cnn_channels: int = 64,
-        lstm_hidden: int = 128,
-        cnn_layers: int = 2,
+        cnn_channels: int = 32,
+        lstm_hidden: int = 64,
+        cnn_layers: int = 1,
         lstm_layers: int = 1,
         dropout: float = 0.2,
     ) -> None:
         super().__init__()
 
-        # CNN stage — no global pooling; preserve time dimension for LSTM
         cnn_blocks: list[nn.Module] = []
         in_ch = input_size
         for _ in range(cnn_layers):
@@ -80,7 +102,6 @@ class ElecCNNLSTM(nn.Module):
             in_ch = cnn_channels
         self.cnn = nn.Sequential(*cnn_blocks)
 
-        # LSTM stage
         self.lstm = nn.LSTM(
             cnn_channels, lstm_hidden, lstm_layers,
             batch_first=True,
@@ -88,7 +109,6 @@ class ElecCNNLSTM(nn.Module):
         )
         self.norm = nn.LayerNorm(lstm_hidden)
         self.fc = nn.Linear(lstm_hidden, 1)
-
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -110,14 +130,11 @@ class ElecCNNLSTM(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, T, F)
-        # CNN expects (B, F, T)
-        x = x.transpose(1, 2)                     # (B, F, T)
-        x = self.cnn(x)                            # (B, cnn_channels, T)
-        x = x.transpose(1, 2)                     # (B, T, cnn_channels)
-
-        # LSTM temporal modelling
-        out, _ = self.lstm(x)                     # (B, T, lstm_hidden)
-        last = out[:, -1, :]                       # (B, lstm_hidden)
+        x = x.transpose(1, 2)          # (B, F, T)
+        x = self.cnn(x)                 # (B, cnn_channels, T)
+        x = x.transpose(1, 2)          # (B, T, cnn_channels)
+        out, _ = self.lstm(x)           # (B, T, lstm_hidden)
+        last = out[:, -1, :]            # (B, lstm_hidden)
         return self.fc(self.norm(last)).squeeze(-1)  # (B,)
 
 
@@ -128,27 +145,33 @@ class ElecCNNLSTM(nn.Module):
 class CNNLSTMRegressor(BaseEstimator, RegressorMixin):
     """Scikit-Learn wrapper for ElecCNNLSTM.
 
-    Converts 2D (N, F) input to 3D sequences internally.
-    Stores the training tail for zero-padding-free test predictions.
+    Lighter defaults vs v10:
+      - lookback 48 → 24  (spike onset visible in last 24h)
+      - cnn_channels 64 → 32, lstm_hidden 128 → 64, cnn_layers 2 → 1
+      - max_epochs 300 → 150, patience 30 → 20
+      - Training uses on-the-fly DataLoader: ~50x less peak RAM
+
+    Set use_spike_features=True (default False) to let the pipeline pass a
+    reduced feature matrix focused on spike drivers (nuclear/gas/residual load).
     """
 
     def __init__(
         self,
-        lookback: int = 48,
-        cnn_channels: int = 64,
-        lstm_hidden: int = 128,
-        cnn_layers: int = 2,
+        lookback: int = 24,
+        cnn_channels: int = 32,
+        lstm_hidden: int = 64,
+        cnn_layers: int = 1,
         lstm_layers: int = 1,
         dropout: float = 0.2,
         lr: float = 5e-4,
         weight_decay: float = 1e-4,
-        batch_size: int = 128,
-        max_epochs: int = 300,
-        patience: int = 30,
+        batch_size: int = 256,
+        max_epochs: int = 150,
+        patience: int = 20,
         val_fraction: float = 0.1,
         loss: str = "huber",
         huber_delta: float = 5.0,
-        warmup_epochs: int = 10,
+        warmup_epochs: int = 5,
         grad_clip: float = 1.0,
         n_seeds: int = 1,
         random_state: int = 42,
@@ -188,25 +211,22 @@ class CNNLSTMRegressor(BaseEstimator, RegressorMixin):
         X_tr, X_va = X[:n_tr], X[n_tr:]
         y_tr, y_va = y[:n_tr], y[n_tr:]
 
-        seqs_tr = _make_sequences(X_tr, self.lookback).astype(np.float32)
+        # Training: on-the-fly Dataset — no large sequence preallocation
+        ds_tr = _SeqDataset(X_tr, y_tr, self.lookback)
+        drop_last = len(ds_tr) % self.batch_size < 2
+        loader = DataLoader(ds_tr, batch_size=self.batch_size, shuffle=True, drop_last=drop_last)
+
+        # Validation: precompute once (small — val_fraction*N rows)
         va_ext = np.vstack([X_tr[-(self.lookback - 1):], X_va])
         seqs_va = _make_sequences_notail(va_ext, self.lookback).astype(np.float32)
+        seqs_va_t = torch.from_numpy(seqs_va).to(CNNLSTM_DEVICE)
+        y_va_t = torch.from_numpy(y_va.astype(np.float32)).to(CNNLSTM_DEVICE)
 
         n_features = X_tr.shape[1]
         model = ElecCNNLSTM(
             n_features, self.cnn_channels, self.lstm_hidden,
             self.cnn_layers, self.lstm_layers, self.dropout,
         ).to(CNNLSTM_DEVICE)
-
-        drop_last = len(seqs_tr) % self.batch_size < 2
-        ds_tr = TensorDataset(
-            torch.from_numpy(seqs_tr).to(CNNLSTM_DEVICE),
-            torch.from_numpy(y_tr).to(CNNLSTM_DEVICE),
-        )
-        loader = DataLoader(ds_tr, batch_size=self.batch_size, shuffle=True, drop_last=drop_last)
-
-        seqs_va_t = torch.from_numpy(seqs_va).to(CNNLSTM_DEVICE)
-        y_va_t = torch.from_numpy(y_va).to(CNNLSTM_DEVICE)
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         warmup = torch.optim.lr_scheduler.LinearLR(
@@ -230,9 +250,11 @@ class CNNLSTMRegressor(BaseEstimator, RegressorMixin):
         for epoch in range(self.max_epochs):
             model.train()
             for xb, yb in loader:
+                xb = xb.to(CNNLSTM_DEVICE)
+                yb = yb.to(CNNLSTM_DEVICE)
                 optimizer.zero_grad()
-                loss = criterion(model(xb), yb)
-                loss.backward()
+                loss_val = criterion(model(xb), yb)
+                loss_val.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), max_norm=self.grad_clip)
                 optimizer.step()
 
@@ -283,7 +305,12 @@ class CNNLSTMRegressor(BaseEstimator, RegressorMixin):
             X_ext = np.vstack([self._X_tail, X])
             seqs = _make_sequences_notail(X_ext, self.lookback).astype(np.float32)
         else:
-            seqs = _make_sequences(X, self.lookback).astype(np.float32)
+            n = len(X)
+            seqs = np.stack([
+                np.vstack([np.zeros((max(0, self.lookback - 1 - i), X.shape[1]), dtype=np.float32),
+                            X[max(0, i - self.lookback + 1): i + 1]])
+                for i in range(n)
+            ])
 
         seqs_t = torch.from_numpy(seqs).to(CNNLSTM_DEVICE)
         preds_list = []
@@ -301,13 +328,13 @@ class CNNLSTMRegressor(BaseEstimator, RegressorMixin):
 
 if __name__ == "__main__":
     print(f"Device: {CNNLSTM_DEVICE}")
-    N, F, L = 500, 50, 48
+    N, F, L = 500, 50, 24
     rng = np.random.default_rng(0)
     X = rng.standard_normal((N, F)).astype(np.float32)
     y = rng.standard_normal(N).astype(np.float32)
 
     model = CNNLSTMRegressor(
-        lookback=L, cnn_channels=16, lstm_hidden=32, cnn_layers=2,
+        lookback=L, cnn_channels=16, lstm_hidden=32, cnn_layers=1,
         max_epochs=5, patience=5, n_seeds=2,
     )
     model.fit(X, y)
