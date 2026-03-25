@@ -1,0 +1,41 @@
+shared:
+  lookback: 48
+  batch_size: 128
+  max_epochs: 300
+  patience: 30
+  val_fraction: 0.1
+  warmup_epochs: 10
+  grad_clip: 1.0
+  n_seeds: 1
+  random_state: 42
+fr:
+  huber_delta: 3.2407002260456883
+  CNNLSTM:
+    cnn_channels: 128
+    lstm_hidden: 256
+    cnn_layers: 2
+    lstm_layers: 2
+    dropout: 0.4992297000641338
+    lr: 0.00010821904950881121
+    _best_rmse: 19.8931
+  ENCDEC:
+    enc_hidden: 128
+    dec_hidden: 64
+    enc_layers: 2
+    dropout: 0.2
+    lr: 0.0005
+uk:
+  huber_delta: 12.55764280201213
+  CNNLSTM:
+    cnn_channels: 64
+    lstm_hidden: 128
+    cnn_layers: 2
+    lstm_layers: 1
+    dropout: 0.3
+    lr: 0.0003
+  ENCDEC:
+    enc_hidden: 128
+    dec_hidden: 64
+    enc_layers: 2
+    dropout: 0.3
+    lr: 0.0003
