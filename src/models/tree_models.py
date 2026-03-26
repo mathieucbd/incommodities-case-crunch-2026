@@ -52,13 +52,12 @@ def train_tree(
 
     elif model_type == "xgboost":
         import xgboost as xgb
-        model = xgb.XGBRegressor(**params)
+        model = xgb.XGBRegressor(**params, early_stopping_rounds=early_stopping_rounds)
         model.fit(
             X_train, y_train,
             sample_weight=sample_weight,
             eval_set=[(X_val, y_val)],
             verbose=False,
-            early_stopping_rounds=early_stopping_rounds,
         )
         best_iter = model.best_iteration
     else:
