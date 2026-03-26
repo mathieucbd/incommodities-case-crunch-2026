@@ -11,13 +11,11 @@ build/
 # Lock file (regenerable)
 uv.lock
 
-# Data (too large for git)
-data/raw/
-data/processed/
-
-# Model artifacts
-data/outputs/models/
-data/outputs/predictions/
+# Data (ignore everything, keep folder structure via .gitkeep)
+data/raw/*
+data/outputs/*
+!data/raw/.gitkeep
+!data/outputs/.gitkeep
 catboost_info/
 
 # Notebooks checkpoints & executed copies
