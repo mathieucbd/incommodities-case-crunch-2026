@@ -1,4 +1,4 @@
-"""Data loading module for INCOMO 3."""
+"""Data loading module ."""
 
 from pathlib import Path
 

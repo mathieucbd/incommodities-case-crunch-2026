@@ -1,15 +1,14 @@
-"""Attack: Winter Holdout Recalibration (ACTION 3)
+"""Attack: Winter Holdout Recalibration FULL DATA
+
+Uses x_train_full.csv + y_train_full.csv (2022-01-01 → 2025-02-28).
 
 Compare regime weights + HBC calibrated on:
-  - SPRING holdout: Train Jul'22->Jan'24, Val Feb'24->Jun'24 (v17 default)
-  - WINTER holdout: Train Jul'22->Jun'23, Val Jul'23->Jan'24
+  - SPRING new: Train 2022-01-01→2024-09-30, Val 2024-10-01→2024-12-31
+  - WINTER new: Train 2022-01-01→2024-06-30, Val 2024-11-01→2025-02-28
 
-Then retrain on full data and generate submissions with:
-  1. Spring weights (= v17 baseline)
-  2. Winter weights
-  3. Averaged weights
+Then retrain on train+val (2022-01-01→2025-02-28) and generate test predictions.
 
-Usage: cd "INCOMO 3" && python -u scripts/attack_winter_holdout.py
+Usage: cd incommodities-case-crunch-2026 && PYTHONIOENCODING=utf-8 python -u scripts/train_v4_dual_holdout_postcomp.py
 """
 
 import sys, json, time, warnings
@@ -158,23 +157,23 @@ def build_fundamental_features(df, market="fr"):
 def train_t2(algo, X_tr, y_tr, X_va, y_va=None):
     if algo == "ridge":
         scaler = StandardScaler()
-        Xts = scaler.fit_transform(np.nan_to_num(X_tr.copy(), 0))
-        Xvs = scaler.transform(np.nan_to_num(X_va.copy(), 0))
+        Xts = scaler.fit_transform(np.nan_to_num(X_tr, 0))
+        Xvs = scaler.transform(np.nan_to_num(X_va, 0))
         m = Ridge(alpha=10.0); m.fit(Xts, y_tr)
         return m.predict(Xvs), {"model": m, "scaler": scaler, "algo": algo}
     elif algo == "elasticnet":
         scaler = StandardScaler()
-        Xts = scaler.fit_transform(np.nan_to_num(X_tr.copy(), 0))
-        Xvs = scaler.transform(np.nan_to_num(X_va.copy(), 0))
+        Xts = scaler.fit_transform(np.nan_to_num(X_tr, 0))
+        Xvs = scaler.transform(np.nan_to_num(X_va, 0))
         m = ElasticNet(alpha=1.0, l1_ratio=0.5, max_iter=5000); m.fit(Xts, y_tr)
         return m.predict(Xvs), {"model": m, "scaler": scaler, "algo": algo}
     elif algo == "lgb_small":
-        ds = lgb.Dataset(np.nan_to_num(X_tr.copy(), 0), label=y_tr)
+        ds = lgb.Dataset(np.nan_to_num(X_tr, 0), label=y_tr)
         params = {"objective": "mae", "max_depth": 3, "learning_rate": 0.05,
                   "num_leaves": 8, "min_child_samples": 50,
                   "subsample": 0.8, "colsample_bytree": 0.8, "verbose": -1}
         m = lgb.train(params, ds, num_boost_round=500)
-        return m.predict(np.nan_to_num(X_va.copy(), 0)), {"model": m, "algo": algo, "params": params}
+        return m.predict(np.nan_to_num(X_va, 0)), {"model": m, "algo": algo, "params": params}
     elif algo == "cb_small":
         from catboost import CatBoostRegressor, Pool
         m = CatBoostRegressor(**CB_SMALL)
@@ -201,12 +200,12 @@ def train_t2(algo, X_tr, y_tr, X_va, y_va=None):
 def retrain_t2(algo, X_full, y_full, info):
     if algo in ("ridge", "elasticnet"):
         scaler = StandardScaler()
-        Xfs = scaler.fit_transform(np.nan_to_num(X_full.copy(), 0))
+        Xfs = scaler.fit_transform(np.nan_to_num(X_full, 0))
         m = Ridge(alpha=10.0) if algo == "ridge" else ElasticNet(alpha=1.0, l1_ratio=0.5, max_iter=5000)
         m.fit(Xfs, y_full)
         return {"model": m, "scaler": scaler}
     elif algo == "lgb_small":
-        ds = lgb.Dataset(np.nan_to_num(X_full.copy(), 0), label=y_full)
+        ds = lgb.Dataset(np.nan_to_num(X_full, 0), label=y_full)
         m = lgb.train(info["params"], ds, num_boost_round=500)
         return {"model": m}
     elif algo == "cb_small":
@@ -225,9 +224,9 @@ def retrain_t2(algo, X_full, y_full, info):
 
 def predict_t2(retrained, X_test):
     if "scaler" in retrained:
-        return retrained["model"].predict(retrained["scaler"].transform(np.nan_to_num(X_test.copy(), 0)))
+        return retrained["model"].predict(retrained["scaler"].transform(np.nan_to_num(X_test, 0)))
     else:
-        return retrained["model"].predict(np.nan_to_num(X_test.copy(), 0))
+        return retrained["model"].predict(np.nan_to_num(X_test, 0))
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -297,8 +296,8 @@ def run_holdout(name, df_train_h, df_val_h, feat_fr, feat_uk, feat_dnn_final,
     preds_fr_en = fr_rm_va + en_fr.preds_val
 
     dnn_scaler_fr = StandardScaler()
-    X_dnn_tr_fr = dnn_scaler_fr.fit_transform(np.nan_to_num(df_train_h[feat_dnn_final].values, 0))
-    X_dnn_va_fr = dnn_scaler_fr.transform(np.nan_to_num(df_val_h[feat_dnn_final].values, 0))
+    X_dnn_tr_fr = dnn_scaler_fr.fit_transform(np.nan_to_num(df_train_h[feat_dnn_final].values.copy(), 0))
+    X_dnn_va_fr = dnn_scaler_fr.transform(np.nan_to_num(df_val_h[feat_dnn_final].values.copy(), 0))
     torch.manual_seed(42); np.random.seed(42)
     dnn_fr = ElecDNN(len(feat_dnn_final), [192, 96], dropout=0.2)
     dnn_fr, dnn_fr_epochs = train_dnn(
@@ -335,8 +334,8 @@ def run_holdout(name, df_train_h, df_val_h, feat_fr, feat_uk, feat_dnn_final,
     preds_uk_en = uk_moc_va + en_uk.preds_val
 
     dnn_scaler_uk = StandardScaler()
-    X_dnn_tr_uk = dnn_scaler_uk.fit_transform(np.nan_to_num(df_train_uk_h[feat_dnn_final].values, 0))
-    X_dnn_va_uk = dnn_scaler_uk.transform(np.nan_to_num(df_val_h[feat_dnn_final].values, 0))
+    X_dnn_tr_uk = dnn_scaler_uk.fit_transform(np.nan_to_num(df_train_uk_h[feat_dnn_final].values.copy(), 0))
+    X_dnn_va_uk = dnn_scaler_uk.transform(np.nan_to_num(df_val_h[feat_dnn_final].values.copy(), 0))
     torch.manual_seed(42); np.random.seed(42)
     dnn_uk = ElecDNN(len(feat_dnn_final), [768, 384, 192], dropout=0.3)
     dnn_uk, dnn_uk_epochs = train_dnn(
@@ -546,10 +545,20 @@ print("  ATTACK: WINTER HOLDOUT RECALIBRATION (ACTION 3)")
 print("=" * 90)
 
 t0 = time.time()
-x_train, y_train, x_test = load_data("data/raw")
-train_fe = build_features(pd.concat([x_train], axis=0), config)
-train_fe = train_fe.join(y_train[["fr_spot", "uk_spot"]])
+# Load FULL DATA (2022-01-01 → 2025-02-28)
+x_train_full = pd.read_csv("data/raw/x_train_full.csv")
+y_train_full = pd.read_csv("data/raw/y_train_full.csv")
+x_test = pd.read_csv("data/raw/x_test.csv")
+# Convert datetime columns to datetime type
+for df in [x_train_full, x_test]:
+    if "datetime_CET" in df.columns:
+        df["datetime_CET"] = pd.to_datetime(df["datetime_CET"])
+    if "datetime_UTC" in df.columns:
+        df["datetime_UTC"] = pd.to_datetime(df["datetime_UTC"])
+train_fe = build_features(x_train_full, config)
+train_fe = train_fe.join(y_train_full[["fr_spot", "uk_spot"]])
 test_fe = build_features(x_test, config)
+print(f"  FULL DATA: {len(train_fe)} samples ({train_fe['datetime_CET'].min()} → {train_fe['datetime_CET'].max()})")
 print(f"  Data loaded in {time.time()-t0:.0f}s")
 
 # Interaction feature
@@ -617,17 +626,23 @@ print(f"  T2 groups: FR={len(fr_groups)}, UK={len(uk_groups)}")
 # 1. RUN BOTH HOLDOUTS
 # ══════════════════════════════════════════════════════════════════════════
 
-# Spring holdout (v17 default)
-mask_spring = train_fe["datetime_CET"] >= "2024-02-01"
+# SPRING NEW: Train 2022-01-01→2024-09-30, Val 2024-10-01→2024-12-31
+mask_spring = train_fe["datetime_CET"] >= "2024-10-01"
 df_train_spring = train_fe[~mask_spring].copy()
 df_val_spring = train_fe[mask_spring].copy()
+print(f"\nSPRING split:")
+print(f"  Train: {len(df_train_spring)} samples ({df_train_spring['datetime_CET'].min()} → {df_train_spring['datetime_CET'].max()})")
+print(f"  Val:   {len(df_val_spring)} samples ({df_val_spring['datetime_CET'].min()} → {df_val_spring['datetime_CET'].max()})")
 spring = run_holdout("SPRING", df_train_spring, df_val_spring, feat_fr, feat_uk, feat_dnn_final, fr_groups, uk_groups)
 
-# Winter holdout W2
-mask_winter_train = train_fe["datetime_CET"] < "2023-07-01"
-mask_winter_val = (train_fe["datetime_CET"] >= "2023-07-01") & (train_fe["datetime_CET"] < "2024-02-01")
+# WINTER NEW: Train 2022-01-01→2024-06-30, Val 2024-11-01→2025-02-28
+mask_winter_train = train_fe["datetime_CET"] < "2024-07-01"
+mask_winter_val = train_fe["datetime_CET"] >= "2024-11-01"
 df_train_winter = train_fe[mask_winter_train].copy()
 df_val_winter = train_fe[mask_winter_val].copy()
+print(f"\nWINTER split:")
+print(f"  Train: {len(df_train_winter)} samples ({df_train_winter['datetime_CET'].min()} → {df_train_winter['datetime_CET'].max()})")
+print(f"  Val:   {len(df_val_winter)} samples ({df_val_winter['datetime_CET'].min()} → {df_val_winter['datetime_CET'].max()})")
 winter = run_holdout("WINTER", df_train_winter, df_val_winter, feat_fr, feat_uk, feat_dnn_final, fr_groups, uk_groups)
 
 
@@ -751,8 +766,8 @@ preds_fr_test_en = rm_fr_test + predict_elastic_net(en_fr_final, en_fr_scaler, t
 # FR DNN retrain
 dnn_scaler_full_fr = StandardScaler()
 X_dnn_full_fr = dnn_scaler_full_fr.fit_transform(
-    np.nan_to_num(train_fe.loc[train_fe.index[valid_fr_full], feat_dnn_final].values, 0))
-X_dnn_test_fr = dnn_scaler_full_fr.transform(np.nan_to_num(test_fe[feat_dnn_final].values, 0))
+    np.nan_to_num(train_fe.loc[train_fe.index[valid_fr_full], feat_dnn_final].values.copy(), 0))
+X_dnn_test_fr = dnn_scaler_full_fr.transform(np.nan_to_num(test_fe[feat_dnn_final].values.copy(), 0))
 torch.manual_seed(42); np.random.seed(42)
 dnn_fr_final = ElecDNN(len(feat_dnn_final), [192, 96], dropout=0.2)
 retrain_epochs_fr = si["dnn_fr_epochs"] + 5
@@ -767,8 +782,8 @@ print(f"  FR DNN retrained ({retrain_epochs_fr} epochs)")
 fund_fr_full = build_fundamental_features(train_fe, "fr")
 fund_fr_test = build_fundamental_features(test_fe, "fr")
 scaler_rf_full = StandardScaler()
-X_rf_full = scaler_rf_full.fit_transform(np.nan_to_num(fund_fr_full.values, 0))
-X_rf_test = scaler_rf_full.transform(np.nan_to_num(fund_fr_test.values, 0))
+X_rf_full = scaler_rf_full.fit_transform(np.nan_to_num(fund_fr_full.values.copy(), 0))
+X_rf_test = scaler_rf_full.transform(np.nan_to_num(fund_fr_test.values.copy(), 0))
 ridge_fr_full = Ridge(alpha=10.0)
 ridge_fr_full.fit(X_rf_full, spot_fr_full)
 preds_fr_test_ridge = ridge_fr_full.predict(X_rf_test)
@@ -833,8 +848,8 @@ preds_uk_test_en = uk_moc_test + predict_elastic_net(en_uk_final, en_uk_scaler, 
 # UK DNN retrain
 dnn_scaler_full_uk = StandardScaler()
 X_dnn_full_uk = dnn_scaler_full_uk.fit_transform(
-    np.nan_to_num(train_fe.loc[train_fe.index[valid_uk_full], feat_dnn_final].values, 0))
-X_dnn_test_uk = dnn_scaler_full_uk.transform(np.nan_to_num(test_fe[feat_dnn_final].values, 0))
+    np.nan_to_num(train_fe.loc[train_fe.index[valid_uk_full], feat_dnn_final].values.copy(), 0))
+X_dnn_test_uk = dnn_scaler_full_uk.transform(np.nan_to_num(test_fe[feat_dnn_final].values.copy(), 0))
 torch.manual_seed(42); np.random.seed(42)
 dnn_uk_final = ElecDNN(len(feat_dnn_final), [768, 384, 192], dropout=0.3)
 retrain_epochs_uk = si["dnn_uk_epochs"] + 5
@@ -849,8 +864,8 @@ preds_uk_test_dnn = uk_moc_test + predict_dnn(dnn_uk_final, X_dnn_test_uk)
 fund_uk_full = build_fundamental_features(train_fe, "uk")
 fund_uk_test = build_fundamental_features(test_fe, "uk")
 scaler_ruk_full = StandardScaler()
-X_ruk_full = scaler_ruk_full.fit_transform(np.nan_to_num(fund_uk_full.values, 0))
-X_ruk_test = scaler_ruk_full.transform(np.nan_to_num(fund_uk_test.values, 0))
+X_ruk_full = scaler_ruk_full.fit_transform(np.nan_to_num(fund_uk_full.values.copy(), 0))
+X_ruk_test = scaler_ruk_full.transform(np.nan_to_num(fund_uk_test.values.copy(), 0))
 ridge_uk_full = Ridge(alpha=10.0)
 ridge_uk_full.fit(X_ruk_full, uk_spot_full)
 preds_uk_test_ridge = ridge_uk_full.predict(X_ruk_test)

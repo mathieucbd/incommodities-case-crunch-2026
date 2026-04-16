@@ -1,20 +1,20 @@
 """Finals inference pipeline v2 — PRETRAIN + INFERENCE modes.
 
-Based on attack_winter_holdout_fulldata.py. Two modes:
+Based on train_v4_dual_holdout_postcomp.py. Two modes:
 
   MODE 1: PRETRAIN (run once, ~10 min before finals)
     Trains on x_train_full (2022-07 → 2025-02), runs double holdout,
     retrains all models, saves everything to outputs/finals_pretrain.pkl.
 
     Usage:
-      python scripts/finals_inference_v2.py --pretrain
+      python scripts/infer_live_finals.py --pretrain
 
   MODE 2: INFERENCE (per round, < 3 min)
     Loads pkl, reads round data, builds features + STL, predicts all models,
     recalibrates HBC on y_validation, outputs y_test.csv.
 
     Usage:
-      python scripts/finals_inference_v2.py --inference \\
+      python scripts/infer_live_finals.py --inference \\
         --x_test   data/finals_round/x_test.csv \\
         --x_val    data/finals_round/x_validation.csv \\
         --y_val    data/finals_round/y_validation.csv \\
@@ -50,7 +50,7 @@ with open("config.yaml") as f:
 PRETRAIN_PATH = "outputs/finals_pretrain.pkl"
 
 # ══════════════════════════════════════════════════════════════════════════
-# HYPERPARAMETERS (identical to attack_winter_holdout_fulldata.py)
+# HYPERPARAMETERS (identical to train_v4_dual_holdout_postcomp.py)
 # ══════════════════════════════════════════════════════════════════════════
 CB_FR_P = {
     "loss_function": "Quantile:alpha=0.6", "eval_metric": "Quantile:alpha=0.6",

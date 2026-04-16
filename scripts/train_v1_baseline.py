@@ -17,7 +17,7 @@ v5:  + XGBoost as 3rd model
 v4b: + UK MAE loss
 v4:  + FR EMA 240h anchor
 
-Usage: cd "INCOMO 3" && python scripts/final_pipeline_v9.py
+Usage: cd incommodities-case-crunch-2026 && PYTHONIOENCODING=utf-8 python scripts/train_v1_baseline.py
 """
 
 import sys, json, time, warnings

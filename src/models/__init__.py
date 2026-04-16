@@ -1,4 +1,4 @@
-"""INCOMO 3 model modules."""
+"""Model modules."""
 
 from .metrics import compute_rmse, compute_hbc, compute_hbc_monthly
 from .targets import prepare_stationary

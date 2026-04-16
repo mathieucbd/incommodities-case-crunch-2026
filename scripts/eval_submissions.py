@@ -1,5 +1,5 @@
 """
-Calculate REAL RMSE for all submissions using y_train_full (actuals Jul 2024 → Feb 2025).
+Calculate REAL RMSE for all submissions using y_train_full (actuals Jul 2024 -> Feb 2025).
 """
 
 import pandas as pd
@@ -18,16 +18,16 @@ def compute_rmse(pred, actual):
 print("Loading y_train_full...")
 y_full = pd.read_csv("data/raw/y_train_full.csv")
 print(f"  y_train_full: {len(y_full)} samples")
-print(f"  ID range: {y_full['id'].min()} → {y_full['id'].max()}")
+print(f"  ID range: {y_full['id'].min()} -> {y_full['id'].max()}")
 
 # Original train ends at 2024-06-30 23:00:00 (ID 0-17543, 17544 samples)
-# Test period: ID 17544 → end (Jul 2024 → Feb 2025)
+# Test period: ID 17544 -> end (Jul 2024 -> Feb 2025)
 
 # Filter y_full to test period (IDs >= 17544)
 y_test_actual = y_full[y_full["id"] >= 17544].copy()
 
 print(f"\nTest actuals (ID >= 17544): {len(y_test_actual)} samples")
-print(f"  ID range: {y_test_actual['id'].min()} → {y_test_actual['id'].max()}")
+print(f"  ID range: {y_test_actual['id'].min()} -> {y_test_actual['id'].max()}")
 print(f"  FR spot: {y_test_actual['fr_spot'].notna().sum()} valid")
 print(f"  UK spot: {y_test_actual['uk_spot'].notna().sum()} valid")
 

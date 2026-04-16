@@ -1,4 +1,4 @@
-# INCOMO 3 — Scores
+# Scores
 
 Competition: InCommodities Case Crunch 2026
 Metric: RMSE (FR) + RMSE (UK) = SUM
@@ -11,9 +11,9 @@ Validation: Feb 2024 — Jun 2024 (3623 hourly observations)
 | Submission | Kaggle Public | Kaggle Private | Notes |
 |------------|---------------|----------------|-------|
 | **submission_attack_averaged** | **22.8294** | **20.0781** ⭐ | **BEST** — calibration winter+spring averaged |
-| submission_attack_winter | 22.9834 | 20.2397 | poids winter seuls |
+| submission_attack_winter | 22.9834 | 20.2397 | winter weights only |
 | submission_attack_spring | 23.0708 val | — | baseline v17 |
-| blend v17_85 + v9_15 | 23.20 | 20.4818 | ancien best public |
+| blend v17_85 + v9_15 | 23.20 | 20.4818 | former best public |
 | v21 (trio CB) | 23.2411 | 20.4918 | |
 | v18 | 23.2608 | 20.5170 | |
 | v16_stl | 23.2575 | 20.5090 | |
@@ -21,16 +21,16 @@ Validation: Feb 2024 — Jun 2024 (3623 hourly observations)
 | v11 | 23.7416 | 20.8676 | |
 | submission (Mtcbd6) | 23.7593 | 20.8874 | |
 | blend v13_85 + v9_15 | 23.7796 | 21.2563 | |
-| **2sigmas (1er)** | — | **19.5475** | concurrent |
+| **2sigmas (1er)** | — | **19.5475** | competitor |
 | **AQTC (nous, 2e)** | — | **20.0781** | |
-| **InCommodities benchmark** | — | **21.4333** | benchmark battu |
+| **InCommodities benchmark** | — | **21.4333** | benchmark beaten |
 | **Team KISS (3e)** | — | **21.4419** | |
 
 ---
 
 ## ACTION 3 — Winter Holdout Recalibration
 
-**Principe**: Tester la stabilité des poids de régime sur 2 holdouts saisonniers
+**Principle**: Test regime weight stability across 2 seasonal holdouts
 
 ### Dual Holdouts
 
@@ -39,19 +39,19 @@ Validation: Feb 2024 — Jun 2024 (3623 hourly observations)
 | **SPRING** | 2022-07-01 → 2024-01-31 | 2024-02-01 → 2024-06-30 | baseline (v17) |
 | **WINTER** | 2022-07-01 → 2024-01-31 | 2023-07-01 → 2023-11-30 | antisaisonnier |
 
-### Scores de Validation (+HBC)
+### Validation Scores (+HBC)
 
 | Submission | FR | UK | SUM | Notes |
 |------------|----|----|-----|-------|
-| **submission_attack_spring** | 14.35 | 8.83 | **23.18** | poids spring (baseline v17) |
-| **submission_attack_winter** | 14.79 | 8.77 | **23.56** | poids winter (+0.38) |
+| **submission_attack_spring** | 14.35 | 8.83 | **23.18** | spring weights (v17 baseline) |
+| **submission_attack_winter** | 14.79 | 8.77 | **23.56** | winter weights (+0.38) |
 | **submission_attack_averaged** | 14.57 | 8.80 | **23.37** | moyenne arithmétique (+0.19) |
 
-### Divergence Critique des Poids
+### Critical Weight Divergence
 
 #### FR — Spring vs Winter
 
-| Régime | Spring CB | Winter CB | Spring DNN | Winter DNN | Spring SR | Winter SR |
+| Regime | Spring CB | Winter CB | Spring DNN | Winter DNN | Spring SR | Winter SR |
 |--------|-----------|-----------|------------|------------|-----------|-----------|
 | Night | 0.0 | **0.2** | 0.2 | **0.0** | 0.7 | **0.8** |
 | Morning | 0.1 | **0.1** | 0.3 | **0.1** | 0.5 | **0.7** |
@@ -59,11 +59,11 @@ Validation: Feb 2024 — Jun 2024 (3623 hourly observations)
 | Peak | 0.0 | **0.1** | 0.3 | **0.1** | 0.6 | **0.7** |
 | Late | 0.3 | **0.4** | 0.4 | **0.2** | 0.2 | **0.3** |
 
-**Key finding**: DNN disparaît presque complètement en winter (0.0-0.2), SR devient ultra-dominant (0.7-0.8).
+**Key finding**: DNN almost completely disappears in winter (0.0-0.2), SR becomes ultra-dominant (0.7-0.8).
 
 #### UK — Spring vs Winter
 
-| Régime | Spring CB | Winter CB | Spring DNN | Winter DNN | Spring SR | Winter SR |
+| Regime | Spring CB | Winter CB | Spring DNN | Winter DNN | Spring SR | Winter SR |
 |--------|-----------|-----------|------------|------------|-----------|-----------|
 | Night | 0.2 | **0.2** | 0.2 | **0.1** | 0.5 | **0.6** |
 | Morning | 0.1 | **0.1** | 0.3 | **0.2** | 0.5 | **0.6** |
@@ -79,10 +79,10 @@ Moins marqué qu'en FR, mais SR monte aussi (0.5-0.7 sauf late).
 |------------|---------------|-------------------|------|
 | **submission_attack_averaged** | **20.0781** | **-2.74** | **2e/68** |
 | submission_attack_winter | 20.2397 | -2.58 | — |
-| submission_attack_spring | non soumis (= v17) | baseline | — |
+| submission_attack_spring | not submitted (= v17) | baseline | — |
 | blend v17_85 + v9_15 | 20.4818 | ref | — |
 
-**Gain énorme**: -2.74 vs meilleur blend précédent → 2e place (gap au 1er: 0.53)
+**Huge gain**: -2.74 vs best previous blend → 2nd place (gap to 1st: 0.53)
 
 ### Best Iterations (Winter Holdout)
 
@@ -93,33 +93,33 @@ Moins marqué qu'en FR, mais SR monte aussi (0.5-0.7 sauf late).
 | XGBoost | 857 | 1161 |
 | DNN | 48 epochs | 35 epochs |
 
-Ces iterations + poids winter averaged = submission_attack_averaged (winner).
+These iterations + winter averaged weights = submission_attack_averaged (winner).
 
 ---
 
 ## Fulldata (2022→2025)
 
-**Date**: 26/03/2026
+**Date**: 2026-03-26
 **Fichiers reçus**: `x_train_full.csv`, `y_train_full.csv`
 **Coverage**: 2022-01-01 → 2025-02-28 (23377 samples)
 
-### Nouveaux Holdouts
+### New Holdouts
 
 | Holdout | Train Period | Val Period | Notes |
 |---------|--------------|------------|-------|
 | **SPRING NEW** | 2022-01-01 → 2024-09-30 | 2024-10-01 → 2024-12-31 | Q4 2024 |
-| **WINTER NEW** | 2022-01-01 → 2024-06-30 | 2024-11-01 → 2025-02-28 | hiver 2024-25 |
+| **WINTER NEW** | 2022-01-01 → 2024-06-30 | 2024-11-01 → 2025-02-28 | winter 2024-25 |
 
-### Résultats (attack_winter_holdout_fulldata.py)
+### Results (train_v4_dual_holdout_postcomp.py)
 
 | Holdout | FR +HBC | UK +HBC | SUM | Notes |
 |---------|---------|---------|-----|-------|
-| SPRING NEW | 14.73 | **33.51** | 48.25 | **UK EXPLOSE** (+24.68 vs 8.83) |
-| WINTER NEW | 14.65 | **35.54** | 50.18 | encore pire |
+| SPRING NEW | 14.73 | **33.51** | 48.25 | **UK EXPLODES** (+24.68 vs 8.83) |
+| WINTER NEW | 14.65 | **35.54** | 50.18 | even worse |
 
-**Catastrophe UK**: RMSE UK passe de 8.83 (ancien val) à 33-35 sur Q4 2024 → période totalement hors distribution.
+**UK Catastrophe**: UK RMSE jumps from 8.83 (old val) to 33-35 in Q4 2024 → period entirely out-of-distribution.
 
-### RMSE Réel (vs y_train_full actuals Jul 2024 → Feb 2025)
+### True RMSE (vs y_train_full actuals Jul 2024 → Feb 2025)
 
 Top 10 submissions testées sur les vrais actuals (ID 17544-23376):
 
@@ -131,14 +131,14 @@ Top 10 submissions testées sur les vrais actuals (ID 17544-23376):
 | submission_attack_averaged | 17.30 | 27.67 | **44.96** |
 | submission_attack_winter | 17.35 | 27.70 | 45.05 |
 
-**Surprise**: Les seed-averaged v9 simple (5 modèles) battent attack_averaged sur le vrai test !
+**Surprise**: Simple seed-averaged v9 (5 models) beats attack_averaged on the true test!
 
-### Problèmes Identifiés
+### Identified Issues
 
-1. **UK hors distribution Q4 2024**: prix extrêmes non vus dans train 2022-2024
-2. **Best_iters mal calibrés**: valeurs spring/winter optimales pour ancien val, pas pour nouveau
-3. **ID mismatch**: x_test dans nouveau contexte ne correspond plus au vrai test (maintenant dans y_train_full)
-4. **Retrain complet impossible**: fullretrain_winter_only génère des IDs 0-5832 au lieu de 17544-23376
+1. **UK out-of-distribution Q4 2024**: extreme prices unseen in train 2022-2024
+2. **Best_iters miscalibrated**: spring/winter optimal values for old val, not for new
+3. **ID mismatch**: x_test in new context no longer matches the true test (now in y_train_full)
+4. **Full retrain impossible**: fullretrain_winter_only generates IDs 0-5832 instead of 17544-23376
 
 ---
 
@@ -149,26 +149,26 @@ Top 10 submissions testées sur les vrais actuals (ID 17544-23376):
 | v3a | CB + LGB + HBC | ~17.5 | ~9.8 | ~27.3 | baseline |
 | v4 | + EMA 240h FR anchor | 16.91 | 9.83 | 26.74 | -0.56 |
 | v4b | + MAE loss UK | 16.91 | 9.78 | 26.68 | -0.06 |
-| v5 | + XGBoost 3e modele | ~16.5 | ~9.7 | ~26.2 | -0.48 |
+| v5 | + XGBoost 3rd model | ~16.5 | ~9.7 | ~26.2 | -0.48 |
 | v5b | + Regime weights (5 regimes) | 16.31 | 10.09 | 26.39 | +0.19 |
-| v6 | + Elastic Net 4e modele | ~16.0 | ~9.9 | 25.89 | -0.50 |
-| v7 | + DNN 5e modele (Huber) | 15.68 | 9.43 | 25.12 | -0.77 |
+| v6 | + Elastic Net 4th model | ~16.0 | ~9.9 | 25.89 | -0.50 |
+| v7 | + DNN 5th model (Huber) | 15.68 | 9.43 | 25.12 | -0.77 |
 | v8 | + rolling_336h, stress_index, UK 12m | 15.70 | 9.45 | 25.15 | +0.03 |
 | v9 | + loss diversity, no FR weights | 15.67 | 9.43 | 25.10 | -0.05 |
-| v13 | + XGB cluster UK (8e membre shifted 6h) | 14.86 | 8.87 | 23.73 | -0.12 (vs v11b) |
-| **v16** | **+ STL 168h target FR (remplace EMA 240h)** | **14.25** | **8.83** | **23.08** | **-0.65** (vs v13) |
+| v13 | + XGB cluster UK (8th member shifted 6h) | 14.86 | 8.87 | 23.73 | -0.12 (vs v11b) |
+| **v16** | **+ STL 168h target FR (replaces EMA 240h)** | **14.25** | **8.83** | **23.08** | **-0.65** (vs v13) |
 | **v17** | **+ Fix 2 STL cohérent retrain** | **14.25** | **8.83** | **23.08** | **-0.04 test** (vs v16 blend) |
 
 ---
 
-## v16 — STL Target Engineering (décomposition saisonnière)
+## v16 — STL Target Engineering (seasonal decomposition)
 
 Architecture: v13 (7 FR models + 8 UK models) + STL 168h pour target FR
 - **Change FR**: target = spot - STL_trend (au lieu de spot - EMA 240h)
 - **Change UK**: AUCUN (garde target = spot - merit_order_cost)
 - STL = Seasonal-Trend decomposition using Loess, period=168h (1 semaine), seasonal=13
 
-### Benchmarks Standalone CatBoost (Quantile:0.6)
+### Standalone CatBoost Benchmarks (Quantile:0.6)
 
 #### France — STL vs EMA 240h
 
@@ -178,7 +178,7 @@ Architecture: v13 (7 FR models + 8 UK models) + STL 168h pour target FR
 | target_ema (baseline) | EMA 240h | 17.92 | baseline | 59 |
 | target_stl_full | STL trend+seasonal | 17.96 | +0.04 | 47 |
 
-**Résultat FR**: ✅ STL trend GAGNE par **-1.84** RMSE +HBC (~10% réduction)
+**FR result**: ✅ STL trend WINS by **-1.84** RMSE +HBC (~10% reduction)
 
 #### UK — STL vs Merit Order Cost
 
@@ -188,45 +188,45 @@ Architecture: v13 (7 FR models + 8 UK models) + STL 168h pour target FR
 | target_stl_trend | STL trend | 10.27 | +0.49 | 701 |
 | target_stl_full | STL trend+seasonal | 11.30 | +1.52 | 601 |
 
-**Résultat UK**: ❌ Merit Order Cost GAGNE par **+0.49** RMSE +HBC
+**UK result**: ❌ Merit Order Cost WINS by **+0.49** RMSE +HBC
 
-### Impact Combiné FR + UK
+### Combined FR + UK Impact
 
 | Market | Current Anchor | STL Trend | Delta | Decision |
 |--------|----------------|-----------|-------|----------|
 | **FR** | EMA 240h: 17.92 | STL: 16.08 | **-1.84** | ✅ **STL** |
 | **UK** | MOC: 9.78 | STL: 10.27 | **+0.49** | ✅ **MOC** |
 
-**Stratégie v16**: STL pour FR uniquement, MOC pour UK
+**v16 strategy**: STL for FR only, MOC for UK
 
-**Gain attendu** (composition 50-70%):
-- Conservatif (50%): -1.84 × 0.5 = -0.92 → v16 ≈ 22.81
-- Réaliste (60%): -1.84 × 0.6 = -1.10 → v16 ≈ 22.63
-- Optimiste (70%): -1.84 × 0.7 = -1.29 → v16 ≈ 22.44
+**Expected gain** (50-70% composition):
+- Conservative (50%): -1.84 × 0.5 = -0.92 → v16 ≈ 22.81
+- Realistic (60%): -1.84 × 0.6 = -1.10 → v16 ≈ 22.63
+- Optimistic (70%): -1.84 × 0.7 = -1.29 → v16 ≈ 22.44
 
-**Range attendu**: 22.50 - 23.00
+**Expected range**: 22.50 - 23.00
 
-### Analyse Technique
+### Technical Analysis
 
-**Pourquoi STL fonctionne pour FR ?**
-- Patterns hebdomadaires forts (weekend vs weekday)
-- Décomposition adaptative (Loess) vs EMA rigide
-- Capture mieux les cycles saisonniers
+**Why STL works for FR?**
+- Strong weekly patterns (weekend vs weekday)
+- Adaptive decomposition (Loess) vs rigid EMA
+- Better captures seasonal cycles
 
-**Pourquoi STL échoue pour UK ?**
-- Merit Order Cost est structurel (gas/0.50 + carbon×0.37)
-- Basis modeling capture la vraie causalité économique
-- STL = pure pattern, MOC = driver fondamental
+**Why STL fails for UK?**
+- Merit Order Cost is structural (gas/0.50 + carbon×0.37)
+- Basis modeling captures the true economic causality
+- STL = pure pattern, MOC = fundamental driver
 
 **Fichiers**:
 - Benchmark FR: `outputs/benchmark_stl_target.json`
 - Benchmark UK: `outputs/benchmark_stl_uk.json`
-- Pipeline v16: `scripts/final_pipeline_v16_stl.py`
+- Pipeline v16: `scripts/train_v3_stl_target.py`
 - Submission: `outputs/submission_v16_stl.csv` ✅
 
 ---
 
-## v11 — Stacking Residuel T2 (hypotheses decomposees)
+## v11 — Residual Stacking T2 (decomposed hypotheses)
 
 Architecture: v9 (5 modeles) + Ridge(fondamentales) + Stacking Residuel T2
 - T2 = 55 modeles par marche (5 algos × 11 groupes thematiques)
@@ -234,18 +234,18 @@ Architecture: v9 (5 modeles) + Ridge(fondamentales) + Stacking Residuel T2
 - Stacking: Ridge meta-learner (alpha=100, 5-fold CV) predit l'erreur du v9 ensemble
 - Ensemble: regime-weighted (step=0.1) sur v9 models + RidgeF + SR
 
-### Hypotheses testees — Scores validation HBC
+### Tested Hypotheses — Validation Scores HBC
 
 | Hyp | Description | FR HBC | UK HBC | SUM | Delta vs v9 |
 |-----|-------------|--------|--------|-----|-------------|
-| H0 | v9 baseline (5 modeles regime + HBC) | 15.6696 | 9.4316 | 25.1012 | ref |
+| H0 | v9 baseline (5 regime models + HBC) | 15.6696 | 9.4316 | 25.1012 | ref |
 | H1 | + Ridge(fondamentales) | 15.5340 | 9.3188 | 24.8528 | **-0.2484** |
 | H2 | + Stacking INDEPENDANT (T2 predit spot) | 15.2936 | 9.3055 | 24.5992 | **-0.5020** |
 | H3 | + Stacking RESIDUEL (T2 predit erreur v9) | 15.2076 | 9.2043 | 24.4120 | **-0.6892** |
 | H4 | + SR avec combos de groupes | 15.3137 | 9.1312 | 24.4450 | **-0.6562** |
 | **BEST** | **FR=H3 + UK=H4** | **15.2076** | **9.1312** | **24.3389** | **-0.7623** |
 
-### Decomposition des gains (cumulatif)
+### Cumulative Gain Decomposition
 
 ```
 v9 baseline         25.10  (reference)
@@ -257,7 +257,7 @@ v9 baseline         25.10  (reference)
   TOTAL             -0.76
 ```
 
-### H2 vs H3 — Stacking Independant vs Residuel
+### H2 vs H3 — Independent vs Residual Stacking
 
 | Marche | SI (T2→spot) | SR (T2→erreur) | Delta |
 |--------|-------------|----------------|-------|
@@ -267,7 +267,7 @@ v9 baseline         25.10  (reference)
 
 Le stacking residuel est systematiquement meilleur.
 
-### H4 — Combos de groupes
+### H4 — Group Combos
 
 | Config | FR SR_HBC | UK SR_HBC |
 |--------|-----------|-----------|
@@ -277,9 +277,9 @@ Le stacking residuel est systematiquement meilleur.
 Combos degradent FR (+1.65) mais pas UK. Le standalone SR est pire avec combos,
 mais dans l'ensemble regime-weighted le SR_combo prend plus de poids pour UK.
 
-### H5 — Leave-one-algo-out (importance des algos T2 dans le stacking)
+### H5 — Leave-one-algo-out (T2 algo importance in stacking)
 
-#### FR — quel algo T2 est le plus important ?
+#### FR — Which T2 algo is most important?
 
 | Algo retire | SR HBC | Delta SR | Ensemble HBC | Delta ens |
 |-------------|--------|----------|-------------|-----------|
@@ -292,7 +292,7 @@ mais dans l'ensemble regime-weighted le SR_combo prend plus de poids pour UK.
 
 **FR: LGB small est critique (+2.18 sur SR). Retirer CB small AMELIORE l'ensemble (-0.07).**
 
-#### UK — quel algo T2 est le plus important ?
+#### UK — Which T2 algo is most important?
 
 | Algo retire | SR HBC | Delta SR | Ensemble HBC | Delta ens |
 |-------------|--------|----------|-------------|-----------|
@@ -316,7 +316,7 @@ mais dans l'ensemble regime-weighted le SR_combo prend plus de poids pour UK.
 | Peak | 17-21 | 0.1 | 0.0 | 0.2 | 0.1 | 0.2 | 0.1 | **0.3** |
 | Late | 22-23 | 0.4 | 0.0 | 0.0 | 0.0 | 0.4 | 0.1 | 0.1 |
 
-**SR recoit 30-40% du poids dans 4/5 regimes (sauf late). EN perd du poids au profit de SR.**
+**SR receives 30-40% of weight in 4/5 regimes (except late). EN loses weight to SR.**
 
 #### UK (7 modeles: CB + LGB + XGB + EN + DNN + RidgeF + SR)
 | Regime | Heures | CB | LGB | XGB | EN | DNN | RidgeF | SR |
@@ -327,7 +327,7 @@ mais dans l'ensemble regime-weighted le SR_combo prend plus de poids pour UK.
 | Peak | 17-21 | 0.3 | 0.3 | 0.0 | 0.0 | 0.1 | 0.0 | **0.3** |
 | Late | 22-23 | 0.2 | 0.1 | 0.4 | 0.0 | 0.2 | 0.1 | 0.0 |
 
-**SR recoit 30-50% du poids dans 4/5 regimes. Peak et Late restent tree-dominated.**
+**SR receives 30-50% of weight in 4/5 regimes. Peak and Late remain tree-dominated.**
 
 ### H6-H11 — Optimisations per-country
 
@@ -353,12 +353,12 @@ FR=H9       24.1902  24.2771  24.1873  24.1888  24.1993
 FR=H10      24.2485  24.3354  24.2456  24.2471  24.2576
 ```
 
-Best: FR=H9 (alpha=1, sans cb_small) + UK=H8 (enriched meta, sans lgb+combo)
+Best: FR=H9 (alpha=1, no cb_small) + UK=H8 (enriched meta, no lgb+combo)
 
-#### H7 rejet: Per-regime stacking overfit
+#### H7 rejected: Per-regime stacking overfits
 
-5 meta-learners (1 par regime) → PIRE que 1 seul (+0.13 SUM).
-Pas assez de donnees par regime pour 44-feature meta-learner. Rejete.
+5 meta-learners (1 per regime) → WORSE than 1 single (+0.13 SUM).
+Not enough data per regime for 44-feature meta-learner. Rejected.
 
 #### H9 detail: Grid search alpha
 
@@ -374,10 +374,10 @@ Pas assez de donnees par regime pour 44-feature meta-learner. Rejete.
 | 500 | 16.1567 | 15.1398 | 9.5761 | 9.0670 |
 | 1000 | 16.1297 | 15.1510 | 9.5499 | 9.0739 |
 
-Alpha=1 optimal pour les 2 pays. La regularisation minimale laisse le meta-learner utiliser
-pleinement les predictions T2.
+Alpha=1 optimal for both markets. Minimal regularization lets the meta-learner fully use
+T2 predictions.
 
-### H11 — Leave-one-group-out (importance des groupes T2)
+### H11 — Leave-one-group-out (T2 group importance)
 
 #### FR (base=15.1307, 44 modeles, 4 algos sans cb_small, alpha=1)
 
@@ -395,7 +395,7 @@ pleinement les predictions T2.
 | **fr_hydro** | **15.1121** | **-0.0186** | Retire ameliore |
 | **fr_continent** | **15.0644** | **-0.0663** | **Retire ameliore** |
 
-**FR: retirer fr_continent donne -0.066 !** fr_hydro et fr_nuclear aussi legrement benefiques a retirer.
+**FR: removing fr_continent gives -0.066!** fr_hydro and fr_nuclear also slightly beneficial to remove.
 
 #### UK (base=9.0581, 54 modeles, 4 algos sans lgb_small + combos, alpha=1)
 
@@ -413,7 +413,7 @@ pleinement les predictions T2.
 | **uk_scarcity** | **9.0369** | **-0.0212** | Retire ameliore |
 | **uk_gas** | **9.0358** | **-0.0224** | **Retire ameliore** |
 
-**UK: retirer uk_gas, uk_scarcity, uk_load donne chacun ~-0.02.**
+**UK: removing uk_gas, uk_scarcity, uk_load each gives ~-0.02.**
 
 ### H13 — Group Optimization (splits + combos)
 
@@ -438,7 +438,7 @@ Base de comparaison: v11 H12 best = 24.17 (FR=15.04, UK=9.13)
 6. fr_renewable + fr_scarcity (-0.191)
 7. fr_renewable + fr_uk_sig (-0.229)
 
-Les combos FR marchent maintenant (H4 = +1.65 sur 11 groupes, H13 = -0.23 sur 8 groupes survivants).
+FR combos now work (H4 = +1.65 on 11 groups, H13 = -0.23 on 8 surviving groups).
 
 #### UK combos greedy (5 paires Ridge au lieu des 6 de v11)
 1. uk_price + uk_fr_price (-0.042)
@@ -447,7 +447,7 @@ Les combos FR marchent maintenant (H4 = +1.65 sur 11 groupes, H13 = -0.23 sur 8 
 4. uk_interco + uk_emissions (-0.194)
 5. uk_wind + uk_continent (-0.195)
 
-### Decomposition des gains cumulatifs (v9 → v11 best)
+### Cumulative Gain Decomposition (v9 → v11 best)
 
 ```
 v9 baseline                  25.10  (reference)
@@ -479,15 +479,15 @@ v9 baseline                  25.10  (reference)
 | v14 (cold-start fix) | 24.27 | 23.69 | +0.58 | **CATASTROPHE** — data leakage |
 | v5b (regime) | 24.88 | 26.39 | -1.51 | ancien meilleur, underfit |
 | v3a (std HBC) | 25.28 | ~27.3 | ~-2.0 | 1er soumis, underfit |
-| v7 (5-model) | non soumis | 25.12 | — | — |
-| v8 | non soumis | 25.15 | — | — |
-| v15 (damped Ridge) | non soumis | 23.74 | — | inefficace (SR reste dominant) |
-| blend v5b+v7 | non soumis | — | — | diversite ok (std=8.93 FR, 2.97 UK) |
+| v7 (5-model) | not submitted | 25.12 | — | — |
+| v8 | not submitted | 25.15 | — | — |
+| v15 (damped Ridge) | not submitted | 23.74 | — | inefficace (SR reste dominant) |
+| blend v5b+v7 | not submitted | — | — | diversite ok (std=8.93 FR, 2.97 UK) |
 | **1er place** | **23.14** | — | — | Team KISS |
 
 ---
 
-## Scores Standalone par Modele (validation +HBC)
+## Standalone Model Scores (validation +HBC)
 
 ### France
 
@@ -550,15 +550,15 @@ v9 baseline                  25.10  (reference)
 
 ---
 
-## A/B Tests — Resultats Cles
+## A/B Tests — Key Results
 
 ### Target Engineering
 | Config | FR +HBC | UK +HBC | Verdict |
 |--------|---------|---------|---------|
-| EMA 240h (FR) | **16.85** | — | gagnant FR |
+| EMA 240h (FR) | **16.85** | — | best FR |
 | Rolling mean 240h (FR) | 17.22 | — | -0.37 vs EMA |
 | Rolling mean 168h (FR) | 17.34 | — | baseline ancien |
-| Basis merit_order_cost (UK) | — | **9.97** | gagnant UK |
+| Basis merit_order_cost (UK) | — | **9.97** | best UK |
 | EMA 240h (UK) | — | 10.65 | -0.68 vs basis |
 
 ### Loss Functions — Diversity Optimization (v9)
@@ -574,9 +574,9 @@ Chaque modele utilise une loss differente pour maximiser la decorrelation des er
 | Elastic Net | MSE (fixe) | 16.44 | MSE (fixe) | 13.10 |
 | **Ensemble** | | **15.65** | | **9.37** |
 
-Decouverte cle : les sample weights FR (time_decay/variance, ratio max/min = 23,895x) tuaient les loss non-MSE. Les supprimer a debloque les gains.
+Key finding: FR sample weights (time_decay/variance, max/min ratio = 23,895x) were killing non-MSE losses. Removing them unlocked the gains.
 
-### Loss Functions (CatBoost, ancien)
+### Loss Functions (CatBoost, legacy)
 | Loss | FR +HBC | UK +HBC |
 |------|---------|---------|
 | RMSE | **16.52** | 9.97 |

@@ -1,4 +1,4 @@
-"""Feature engineering pipeline for INCOMO 3.
+"""Feature engineering pipeline .
 
 Builds ~290 derived features across 27 categories on top of the 111 raw columns.
 Stateless: identical behavior on train and test, no target access.

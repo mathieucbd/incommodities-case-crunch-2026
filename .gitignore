@@ -13,9 +13,7 @@ uv.lock
 
 # Data (ignore everything, keep folder structure via .gitkeep)
 data/raw/*
-data/outputs/*
 !data/raw/.gitkeep
-!data/outputs/.gitkeep
 catboost_info/
 
 # Notebooks checkpoints & executed copies
@@ -28,9 +26,6 @@ notebooks/*_executed.ipynb
 
 # OS
 .DS_Store
-
-# Local archive (old experiments, never committed)
-archive/
 
 # Outputs (model artifacts, predictions, submissions) — keep only required files
 outputs/*
