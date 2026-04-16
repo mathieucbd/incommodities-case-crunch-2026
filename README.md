@@ -16,7 +16,7 @@
 FR target:    spot − STL_trend(spot_la, period=168h)
 UK target:    spot − merit_order_cost  (gas/0.50 + emission×0.37)
 
-SR:           Stacking Résiduel — 39–44 thematic sub-models per market
+SR:           Residual Stacking — 39–44 thematic sub-models per market
               → Ridge meta-learner predicts residual error of ensemble v9
 
 Ensemble:     weights per hourly regime (5 regimes: night/morning/day/peak/late)
@@ -35,9 +35,9 @@ HBC:          hourly bias correction (24 values per market)
 | Step | Innovation | RMSE gain |
 |------|-----------|-----------|
 | v9 baseline | CatBoost + LightGBM + regime weights + HBC | — |
-| v11 | Stacking Résiduel (39–44 sub-models) | −0.76 |
+| v11 | Residual Stacking (39–44 sub-models) | −0.76 |
 | v17 | STL decomposition as FR target | −1.84 |
-| attack_winter | Double seasonal calibration (spring + winter) | −2.74 |
+| train_v4_dual_holdout | Double seasonal calibration (spring + winter) | −2.74 |
 
 ---
 
@@ -72,7 +72,7 @@ python scripts/infer_live_finals.py
 | Script | Description | Val RMSE |
 |--------|-------------|----------|
 | `train_v1_baseline.py` | Baseline: 5 models, regime weights, HBC | ~26.1 |
-| `train_v2_stacking_residual.py` | + Stacking Résiduel | ~25.3 |
+| `train_v2_stacking_residual.py` | + Residual Stacking | ~25.3 |
 | `train_v3_stl_target.py` | + STL target FR + coherent Fix2 | ~23.9 |
 | `train_v4_dual_holdout.py` | + Double seasonal calibration | **~23.4** |
 
@@ -84,13 +84,13 @@ python scripts/infer_live_finals.py
 ├── config.yaml                        — hyperparameters (CatBoost, LightGBM, XGB, DNN)
 ├── pyproject.toml                     — dependencies (managed with uv)
 ├── scripts/
-│   ├── train_v1_baseline.py           — v9 baseline
-│   ├── train_v2_stacking_residual.py          — + Stacking Résiduel
-│   ├── train_v3_stl_target.py          — + STL target FR
-│   ├── train_v4_dual_holdout.py       — WINNING SOLUTION (double calibration)
-│   ├── train_v4_dual_holdout_postcomp.py — full-data variant (for finals)
-│   ├── infer_live_finals.py         — finals pipeline (pretrain + inference)
-│   └── eval_submissions.py
+│   ├── train_v1_baseline.py              — baseline: 5 models, regime weights, HBC
+│   ├── train_v2_stacking_residual.py     — + Residual Stacking (SR)
+│   ├── train_v3_stl_target.py            — + STL target FR
+│   ├── train_v4_dual_holdout.py          — WINNING: double seasonal calibration
+│   ├── train_v4_dual_holdout_postcomp.py — full-data variant (post-competition)
+│   ├── infer_live_finals.py              — finals inference (pretrained models)
+│   └── eval_submissions.py               — compute RMSE on saved submissions
 ├── src/
 │   ├── feature_engineering.py         — all feature construction
 │   └── models/
@@ -102,15 +102,17 @@ python scripts/infer_live_finals.py
 │       └── metrics.py                 — RMSE, sMAPE utilities
 ├── notebooks/
 │   ├── 01_eda.ipynb                   — initial EDA
+│   ├── 02_eda_deep_dives.ipynb        — deep-dive analyses (spark spread, regimes, spikes)
 │   ├── 03_feature_selection.ipynb     — feature selection (generates required JSONs)
-│   ├── 04_catboost_results.ipynb      — model benchmarks
+│   ├── 04_catboost_results.ipynb      — CatBoost feature sweep + Optuna results
 │   ├── 05_fr_error_diagnostic.ipynb   — FR error analysis
-│   ├── 06_basis_modeling.ipynb        — UK target modeling
+│   ├── 06_basis_modeling.ipynb        — UK basis target modeling
 │   └── 07_results_recap.ipynb         — final results recap
 ├── docs/
-│   ├── SCORES.md                      — full submission history
-│   ├── FINDINGS.md                    — key findings
-│   └── context.md                     — electricity market context
+│   ├── scores.md                      — full submission history
+│   ├── findings.md                    — key findings
+│   ├── context.md                     — electricity market context
+│   └── subject.md                     — competition brief
 └── outputs/                           — gitignored except required files
     ├── feature_selection_v5_fr.json   — required by pipeline
     ├── uk_feature_research.json       — required by pipeline

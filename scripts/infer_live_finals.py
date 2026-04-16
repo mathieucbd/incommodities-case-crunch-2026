@@ -451,7 +451,7 @@ def run_holdout(name, df_train_h, df_val_h, feat_fr, feat_uk, feat_dnn_final,
 
     print(f"  [{name}] T2: {len(t2_fr)} FR + {len(t2_uk)} UK ({time.time()-t2_start:.0f}s)")
 
-    # ── Stacking Résiduel ──
+    # ── Residual Stacking ──
     def make_vb(d):
         return {k: {"preds": v["preds"][vb], **{kk: vv for kk, vv in v.items() if kk != "preds"}}
                 for k, v in d.items()}

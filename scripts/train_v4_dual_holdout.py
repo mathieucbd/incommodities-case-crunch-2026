@@ -447,7 +447,7 @@ def run_holdout(name, df_train_h, df_val_h, feat_fr, feat_uk, feat_dnn_final,
 
     print(f"  [{name}] T2: {len(t2_fr)} FR + {len(t2_uk)} UK ({time.time()-t2_start:.0f}s)")
 
-    # ── Stacking Résiduel ──
+    # ── Residual Stacking ──
     def make_vb(d):
         return {k: {"preds": v["preds"][vb], **{kk: vv for kk, vv in v.items() if kk != "preds"}}
                 for k, v in d.items()}
@@ -970,6 +970,6 @@ for key in results:
             elif isinstance(v, dict):
                 results[key][k] = {kk: int(vv) if isinstance(vv, (np.integer, np.int64)) else vv for kk, vv in v.items()}
 
-with open("outputs/attack_winter_holdout_results.json", "w") as f:
+with open("outputs/train_v4_dual_holdout_results.json", "w") as f:
     json.dump(results, f, indent=2)
-print(f"  Results saved to outputs/attack_winter_holdout_results.json")
+print(f"  Results saved to outputs/train_v4_dual_holdout_results.json")

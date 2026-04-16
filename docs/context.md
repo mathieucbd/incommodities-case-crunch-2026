@@ -120,9 +120,9 @@ UK uses a 12-month training window (Feb 2023 → Jan 2024) — the post-gas-cris
 incommodities-case-crunch-2026/
 ├── data/raw/                          # Raw data (x_train, y_train, x_test)
 ├── docs/
-│   ├── Subject.md                     # Competition brief
+│   ├── subject.md                     # Competition brief
 │   ├── context.md                     # This file
-│   └── FINDINGS.md                    # Key findings and decisions
+│   └── findings.md                    # Key findings and decisions
 ├── notebooks/
 │   ├── 01_eda.ipynb                   # Initial exploration
 │   ├── 02_eda_deep_dives.ipynb        # Deep-dive analyses
