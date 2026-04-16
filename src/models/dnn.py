@@ -34,8 +34,10 @@ class ElecDNN(nn.Module):
 
 
 def train_dnn(model, X_tr, y_tr, X_va, y_va, lr=1e-3, wd=1e-4, bs=256,
-              max_epochs=500, patience=30):
-    """Train DNN with early stopping on validation Huber loss."""
+              max_epochs=500, patience=30, criterion=None):
+    """Train DNN with early stopping on validation loss."""
+    if criterion is None:
+        criterion = nn.HuberLoss(delta=5.0)
     model = model.to(DNN_DEVICE)
     ds = TensorDataset(torch.FloatTensor(X_tr).to(DNN_DEVICE),
                        torch.FloatTensor(y_tr).to(DNN_DEVICE))
@@ -44,7 +46,6 @@ def train_dnn(model, X_tr, y_tr, X_va, y_va, lr=1e-3, wd=1e-4, bs=256,
     y_va_t = torch.FloatTensor(y_va).to(DNN_DEVICE)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=10, factor=0.5, min_lr=1e-6)
-    criterion = nn.HuberLoss(delta=5.0)
     best_loss, best_state, no_imp = float("inf"), None, 0
 
     for ep in range(max_epochs):

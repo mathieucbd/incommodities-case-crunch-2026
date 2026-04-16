@@ -59,7 +59,9 @@ def train_tree(
             eval_set=[(X_val, y_val)],
             verbose=False,
         )
-        best_iter = model.best_iteration
+        best_iter = (model.best_iteration
+                     if hasattr(model, "best_iteration")
+                     else params.get("n_estimators", 15000))
     else:
         raise ValueError(f"Unknown model_type: {model_type}")
 

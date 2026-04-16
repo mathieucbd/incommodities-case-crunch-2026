@@ -14,12 +14,17 @@
 - Le leaderboard Kaggle public utilise 60% du test — ne pas overfitter dessus
 - Evaluation finale en live au siege d'InCommodities sur des donnees futures inedites
 
-**Classement** :
-| Submission | Score Kaggle | Notes |
-|-----------|-------------|-------|
-| 1ere place (Team KISS) | 23.14 | — |
-| Notre meilleur (v5b) | 24.88 | 4-model regime |
-| Notre meilleure val (v7) | 25.12 | 5-model regime, non soumis |
+**Classement Final (Private Leaderboard)** :
+| Rang | Team | Score Private | Notes |
+|------|------|---------------|-------|
+| **1er** | **2sigmas** | **19.5475** | gagnant |
+| **2e** | **AQTC (nous)** | **20.0781** | **submission_attack_averaged** |
+| **3e** | **Team KISS** | **21.4419** | — |
+| — | InCommodities benchmark | 21.4333 | battu |
+
+**Gap au 1er** : 0.53 RMSE
+
+**Notre meilleur Kaggle Public** : blend v17_85 + v9_15 = 23.20 (ancien leader public avant private reveal)
 
 ---
 
@@ -27,11 +32,20 @@
 
 ### Fichiers bruts (`data/raw/`)
 
+**Données originales** (compétition) :
 | Fichier | Lignes | Periode | Colonnes |
 |---------|--------|---------|----------|
 | `x_train.csv` | 17 544 | 2022-07-01 → 2024-06-30 | 111 (3 id + 67 forecast + 34 lagged + 7 daily) |
 | `y_train.csv` | 17 544 | idem | id, datetime_CET, datetime_UTC, fr_spot, uk_spot |
 | `x_test.csv` | 5 833 | 2024-07-01 → 2025-02-28 | 111 (meme schema, sans targets) |
+
+**Données fulldata** (reçues 26/03/2026 post-compétition) :
+| Fichier | Lignes | Periode | Colonnes |
+|---------|--------|---------|----------|
+| `x_train_full.csv` | 23 377 | 2022-01-01 → 2025-02-28 | 111 |
+| `y_train_full.csv` | 23 377 | idem | id, datetime_CET, datetime_UTC, fr_spot, uk_spot |
+
+Les fichiers fulldata incluent les actuals du test period (Jul 2024 → Feb 2025), permettant de valider les submissions sur les vraies valeurs.
 
 ### Conventions de nommage
 
@@ -52,11 +66,25 @@
 
 ### Split temporel
 
+**Original (compétition)** :
 ```
-Train:  Jul 2022 ───────────────────────────── Jan 2024
+Train:  Jul 2022 ───────────────────────────── Jan 2024  (17544 samples)
 Val:    ·········································· Feb 2024 ── Jun 2024  (3623h)
 Test:   ··················································· Jul 2024 ── Feb 2025  (5833h)
 ```
+
+**Fulldata (post-compétition)** :
+```
+Full:   Jan 2022 ────────────────────────────────────────────── Feb 2025  (23377 samples)
+        ↑
+        +6 mois additionnels
+```
+
+**Nouveaux holdouts (ACTION 3)** :
+- **SPRING** : Train 2022-07-01→2024-01-31, Val 2024-02-01→2024-06-30
+- **WINTER** : Train 2022-07-01→2024-01-31, Val 2023-07-01→2023-11-30 (antisaisonnier)
+- **SPRING NEW (fulldata)** : Train 2022-01-01→2024-09-30, Val 2024-10-01→2024-12-31
+- **WINTER NEW (fulldata)** : Train 2022-01-01→2024-06-30, Val 2024-11-01→2025-02-28
 
 UK utilise une fenetre de 12 mois (Feb 2023 → Jan 2024) pour le training — le regime post-crise gaz est plus representatif.
 
@@ -132,38 +160,59 @@ INCOMO 3/
 
 ---
 
-## Pipeline v9
+## Pipeline v17 (BEST)
 
 ### Vue d'ensemble
 
-Le pipeline est un orchestrateur (~800 lignes) qui enchaine :
+Le pipeline v17 = v16 (STL target FR) + Fix 2 (STL cohérent retrain) est un orchestrateur qui enchaine :
 
 1. **Chargement** : `data_loading.load_data()` → x_train, y_train, x_test
-2. **Feature engineering** : `feature_engineering.build_features()` sur concat(train, test) pour eviter le cold-start aux frontieres
+2. **Feature engineering** : `feature_engineering.build_features()` (~290 features)
 3. **Split** : train (Jul 2022 — Jan 2024) / val (Feb — Jun 2024) / test (Jul 2024 — Feb 2025)
 4. **Target stationnaire** :
-   - FR : `y = spot - EMA(spot_la, span=240h)` — l'EMA 10 jours capture le trend lent
-   - UK : `y = spot - merit_order_cost` — le MOC capture ~70% du signal
-5. **Entrainement** de 5 modeles par marche (10 total) sur le deviation target
+   - **FR** : `y = spot - STL_trend(spot_la, 168h)` — décomposition saisonnière (v16+)
+   - **UK** : `y = spot - merit_order_cost` — le MOC capture ~70% du signal
+5. **Entrainement** de 7 modeles FR + 8 modeles UK (15 total) sur le deviation target
 6. **Ensemble** : poids par regime horaire (5 regimes × N modeles), grid search step 0.1
 7. **HBC** : correction du biais systematique par heure (24 parametres)
-8. **Retrain** sur train+val, prediction test, generation CSV
+8. **Retrain** sur train+val avec STL cohérent (Fix 2), prediction test, generation CSV
 
-### Modeles
+### Architecture v13/v17 (7 FR + 8 UK models)
 
-| Modele | FR | UK | Role |
-|--------|-----|-----|------|
-| **CatBoost** | depth=3, lr=0.059, RMSE loss, 32 feat | depth=8, MAE loss, 12m window, 154 feat | Meilleur standalone |
-| **LightGBM** | 15 leaves, MAE loss | 63 leaves, MAE loss, 12m | Diversite (corr erreur 0.75 avec CB) |
-| **XGBoost** | depth=4 (poids=0, hors ensemble FR) | depth=7, 12m | Diversite UK |
-| **Elastic Net** | alpha=10, l1=0.9, 14 features non-zero | alpha=1, 32 non-zero, 12m | Lineaire, diversite |
-| **DNN** | [192,96], Huber δ=5, dropout=0.2 | [768,384,192], Huber, dropout=0.3 | Non-lineaire, 356 feat |
+**France (7 modèles)** :
+| Modele | Config | Role |
+|--------|--------|------|
+| **CatBoost** | depth=3, Quantile:0.6, 28 feat | Base tree, asymétrique |
+| **LightGBM** | 15 leaves, MAE loss | Diversité loss |
+| **XGBoost** | depth=4, PseudoHuber:20 | Diversité loss |
+| **Elastic Net** | alpha=10, l1=0.9, 14 non-zero | Linéaire, corrélation 0.60-0.70 avec trees |
+| **DNN** | [192,96], Huber:5, dropout=0.2 | Non-linéaire, 356 feat, corr 0.77-0.82 |
+| **RidgeF** | Features fondamentales uniquement | Très décorrélé (corr=0.65 FR, 0.41 UK) |
+| **SR** | Ridge meta-learner sur erreurs v9 | Stacking résiduel, T2 models (55 membres) |
 
-### Ensemble par regime
+**UK (8 modèles)** :
+| Modele | Config | Role |
+|--------|--------|------|
+| **CatBoost** | depth=8, MAE loss, 12m window, 154 feat | Base tree |
+| **LightGBM** | 63 leaves, Huber:5, 12m | Diversité |
+| **XGBoost** | depth=7, PseudoHuber:20, 12m | Diversité |
+| **Elastic Net** | alpha=1, 32 non-zero, 12m | Linéaire |
+| **DNN** | [768,384,192], MSE, dropout=0.3, 12m | Non-linéaire |
+| **RidgeF** | Features fondamentales uniquement | Décorrélé |
+| **SR** | Ridge meta-learner, T2 models (65 membres avec combos) | Stacking résiduel |
+| **XGB_cluster** | XGB sur shifted 6h clusters (4 clusters) | Segmentation temporelle (v13) |
+
+### Ensemble par regime (5 regimes)
 
 5 regimes horaires : night (0-5h), morning (6-9h), day (10-16h), peak (17-21h), late (22-23h).
 
-Les poids varient par regime — par exemple FR morning : EN=0.3, DNN=0.7 (les trees ratent les ramps matinaux), tandis que FR late : CB=0.5, DNN=0.4.
+**Exemple FR morning (submission_attack_spring)** :
+- CB=0.1, LGB=0.0, XGB=0.0, EN=0.1, DNN=0.3, RidgeF=0.0, SR=0.5
+
+**Exemple FR morning (submission_attack_winter)** :
+- CB=0.1, LGB=0.0, XGB=0.0, EN=0.1, DNN=0.1, RidgeF=0.0, SR=0.7
+
+Les poids divergent radicalement selon la saison (ACTION 3). DNN disparaît en winter, SR ultra-dominant.
 
 ### Post-processing
 
@@ -174,39 +223,60 @@ Les poids varient par regime — par exemple FR morning : EN=0.3, DNN=0.7 (les t
 
 ## Scores Actuels
 
-### Validation (Feb — Jun 2024)
+### Validation — BEST (attack_averaged, dual holdout)
 
-| | RMSE | +HBC |
-|---|---|---|
-| FR Ensemble | 15.81 | **15.71** |
-| UK Ensemble | 9.59 | **9.49** |
-| **SUM** | | **25.20** |
+| Submission | FR +HBC | UK +HBC | SUM | Notes |
+|------------|---------|---------|-----|-------|
+| **attack_averaged** | **14.57** | **8.80** | **23.37** | moyenne spring+winter |
+| attack_spring | 14.35 | 8.83 | 23.18 | baseline v17 |
+| attack_winter | 14.79 | 8.77 | 23.56 | poids winter seuls |
 
-### Modeles individuels (+HBC)
+### Kaggle (Private Leaderboard)
+
+| Submission | Private Score | Rank |
+|------------|---------------|------|
+| **attack_averaged** | **20.0781** | **2e/68** |
+| attack_winter | 20.2397 | — |
+| blend v17_85 + v9_15 | 20.4818 | ancien best public |
+
+### Modeles individuels v17 (+HBC, holdout spring)
 
 | Modele | FR | UK |
 |--------|-----|-----|
-| CatBoost | 16.64 | 10.08 |
-| LightGBM | 17.15 | 10.11 |
-| XGBoost | 24.88 | 10.22 |
-| Elastic Net | 16.56 | 11.32 |
-| DNN | 16.73 | 10.99 |
+| CatBoost | 16.08 | 9.78 |
+| LightGBM | 17.58 | 10.15 |
+| XGBoost | 18.67 | 10.11 |
+| Elastic Net | 16.44 | 13.10 |
+| DNN | 16.69 | 10.96 |
+| RidgeF | ~17.5 | ~11.5 |
+| SR (stacking résiduel) | 16.55 | 9.80 |
 
 ---
 
 ## Historique des Versions
 
-| Version | Changement principal | SUM val |
-|---------|---------------------|---------|
-| v3a | CatBoost + LightGBM + HBC | ~27.3 |
-| v4 | + EMA 240h FR anchor | 26.74 |
-| v4b | + MAE loss UK | 26.68 |
-| v5 | + XGBoost 3e modele | ~26.2 |
-| v5b | + Regime weights (5 regimes) | 26.39 |
-| v6 | + Elastic Net 4e modele | 25.89 |
-| v7 | + DNN 5e modele (Huber loss) | **25.12** |
-| v8 | + rolling_336h, stress_index, UK 12m | 25.15 |
-| v9 | Audit fixes + refactoring modulaire | 25.20 |
+| Version | Changement principal | SUM val | Kaggle |
+|---------|---------------------|---------|--------|
+| v3a | CatBoost + LightGBM + HBC | ~27.3 | 25.28 |
+| v4 | + EMA 240h FR anchor | 26.74 | — |
+| v4b | + MAE loss UK | 26.68 | — |
+| v5 | + XGBoost 3e modele | ~26.2 | — |
+| v5b | + Regime weights (5 regimes) | 26.39 | 24.88 |
+| v6 | + Elastic Net 4e modele | 25.89 | — |
+| v7 | + DNN 5e modele (Huber loss) | 25.12 | — |
+| v8 | + rolling_336h, stress_index, UK 12m | 25.15 | — |
+| v9 | Audit fixes + loss diversity | 25.10 | — |
+| v10 | + Nystroem kernel features | 25.07 | — |
+| v11 | + RidgeF + Stacking Résiduel T2 | 23.83 | 24.23 (+0.40 overfit) |
+| v11b | Anti-overfitting (3+3 combos, alpha=500) | 23.85 | 23.92 (+0.07 gap) |
+| v13 | + XGB_cluster UK (8e membre) | 23.73 | 23.94 (+0.21 gap) |
+| v16 | + STL target FR (remplace EMA 240h) | 23.08 | 23.26 (+0.18 STL bias) |
+| **v17** | **+ Fix 2 STL cohérent retrain** | **23.08** | **23.20** (+0.12 gap) |
+| **attack_averaged** | **Dual holdout spring+winter** | **23.37** | **20.0781** ⭐ |
+
+**Blending** :
+- blend v17_85 + v9_15 : Kaggle 20.4818 (ancien best public)
+- blend v13_85 + v9_15 : Kaggle 21.2563
 
 ---
 

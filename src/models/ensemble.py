@@ -1,4 +1,4 @@
-"""Regime-based ensemble weight optimization."""
+"""Regime-based ensemble weight optimization (any number of models)."""
 
 import numpy as np
 
@@ -18,8 +18,27 @@ for _rname, _hours in REGIMES.items():
         HOUR_TO_REGIME[_h] = _rname
 
 
-def optimize_regime_weights(models_dict, actual, hours, label):
-    """Per-regime weight optimization for 2-5 models. Returns dict of {regime: weights}."""
+def _weight_combos(n_models, step=0.1):
+    """Generate all non-negative weight tuples of length n_models summing to 1.0."""
+    levels = int(round(1.0 / step))
+
+    def _recurse(remaining, n_left):
+        if n_left == 1:
+            yield (round(remaining * step, 2),)
+            return
+        for k in range(remaining + 1):
+            for rest in _recurse(remaining - k, n_left - 1):
+                yield (round(k * step, 2),) + rest
+
+    yield from _recurse(levels, n_models)
+
+
+def optimize_regime_weights(models_dict, actual, hours, label, step=0.1):
+    """Per-regime weight optimization for any number of models.
+
+    Uses grid search over all weight combinations summing to 1.0.
+    For n=6 step=0.1: 3003 combos/regime. For n=9: 43758 combos/regime.
+    """
     names = list(models_dict.keys())
     n = len(names)
     regime_weights = {}
@@ -30,89 +49,23 @@ def optimize_regime_weights(models_dict, actual, hours, label):
         if rmask.sum() == 0:
             continue
 
-        best = {"rmse": 999, "w": {names[0]: 1.0}}
+        best_rmse = 999.0
+        best_w = {names[0]: 1.0}
         a = actual[rmask]
-        p = {nm: models_dict[nm][rmask] for nm in names}
+        P = np.stack([models_dict[nm][rmask] for nm in names])
 
-        if n == 1:
-            best = {"rmse": compute_rmse(a, p[names[0]]), "w": {names[0]: 1.0}}
-        elif n == 2:
-            for w1 in np.arange(0.0, 1.05, 0.1):
-                w2 = round(1.0 - w1, 1)
-                e = w1 * p[names[0]] + w2 * p[names[1]]
-                r = compute_rmse(a, e)
-                if r < best["rmse"]:
-                    best = {"rmse": r, "w": {names[0]: round(w1, 1), names[1]: w2}}
-        elif n == 3:
-            for w1 in np.arange(0.0, 1.05, 0.1):
-                for w2 in np.arange(0.0, 1.05 - w1, 0.1):
-                    w3 = round(1.0 - w1 - w2, 1)
-                    if w3 < -0.01:
-                        continue
-                    e = w1 * p[names[0]] + w2 * p[names[1]] + w3 * p[names[2]]
-                    r = compute_rmse(a, e)
-                    if r < best["rmse"]:
-                        best = {"rmse": r,
-                                "w": {names[0]: round(w1, 1), names[1]: round(w2, 1), names[2]: w3}}
-        elif n == 4:
-            for w1 in np.arange(0.0, 1.05, 0.1):
-                for w2 in np.arange(0.0, 1.05 - w1, 0.1):
-                    for w3 in np.arange(0.0, 1.05 - w1 - w2, 0.1):
-                        w4 = round(1.0 - w1 - w2 - w3, 1)
-                        if w4 < -0.01:
-                            continue
-                        e = (w1 * p[names[0]] + w2 * p[names[1]] +
-                             w3 * p[names[2]] + w4 * p[names[3]])
-                        r = compute_rmse(a, e)
-                        if r < best["rmse"]:
-                            best = {"rmse": r,
-                                    "w": {names[0]: round(w1, 1), names[1]: round(w2, 1),
-                                          names[2]: round(w3, 1), names[3]: w4}}
-        elif n == 5:
-            for w1 in np.arange(0.0, 1.05, 0.1):
-                for w2 in np.arange(0.0, 1.05 - w1, 0.1):
-                    for w3 in np.arange(0.0, 1.05 - w1 - w2, 0.1):
-                        for w4 in np.arange(0.0, 1.05 - w1 - w2 - w3, 0.1):
-                            w5 = round(1.0 - w1 - w2 - w3 - w4, 1)
-                            if w5 < -0.01:
-                                continue
-                            e = (w1 * p[names[0]] + w2 * p[names[1]] +
-                                 w3 * p[names[2]] + w4 * p[names[3]] +
-                                 w5 * p[names[4]])
-                            r = compute_rmse(a, e)
-                            if r < best["rmse"]:
-                                best = {"rmse": r,
-                                        "w": {names[0]: round(w1, 1), names[1]: round(w2, 1),
-                                              names[2]: round(w3, 1), names[3]: round(w4, 1),
-                                              names[4]: w5}}
-        else:
-            # n > 5: use scipy SLSQP constrained optimization (simplex: w>=0, sum=1)
-            from scipy.optimize import minimize
-            P = np.stack([p[nm] for nm in names], axis=1)  # (N_regime, n)
+        for combo in _weight_combos(n, step):
+            w = np.array(combo)
+            e = w @ P
+            r = float(np.sqrt(np.mean((a - e) ** 2)))
+            if r < best_rmse:
+                best_rmse = r
+                best_w = {names[i]: round(combo[i], 2) for i in range(n)}
 
-            def _obj(w):
-                return np.sqrt(np.mean((P @ w - a) ** 2))
-
-            w0 = np.ones(n) / n
-            res = minimize(
-                _obj, w0, method="SLSQP",
-                bounds=[(0.0, 1.0)] * n,
-                constraints=[{"type": "eq", "fun": lambda w: w.sum() - 1.0}],
-                options={"maxiter": 1000, "ftol": 1e-9},
-            )
-            w_opt = np.clip(res.x, 0, 1)
-            w_opt = w_opt / w_opt.sum()
-            w_rounded = np.round(w_opt, 2)
-            w_rounded[-1] = round(1.0 - float(w_rounded[:-1].sum()), 2)
-            best = {
-                "rmse": _obj(w_opt),
-                "w": {nm: float(w_rounded[i]) for i, nm in enumerate(names)},
-            }
-
-        regime_weights[rname] = best["w"]
-        ens_preds[rmask] = sum(best["w"].get(nm, 0) * p[nm] for nm in names)
-        w_str = " / ".join(f"{nm}={best['w'].get(nm, 0):.1f}" for nm in names)
-        print(f"    {rname:8s} (h={REGIMES[rname]}): {w_str}  RMSE={best['rmse']:.2f}  n={rmask.sum()}")
+        regime_weights[rname] = best_w
+        ens_preds[rmask] = sum(best_w.get(nm, 0) * models_dict[nm][rmask] for nm in names)
+        w_str = " / ".join(f"{nm}={best_w.get(nm, 0):.1f}" for nm in names)
+        print(f"    {rname:8s} (h={REGIMES[rname]}): {w_str}  RMSE={best_rmse:.2f}  n={rmask.sum()}")
 
     total_rmse = compute_rmse(actual, ens_preds)
     print(f"  {label} regime ensemble: RMSE={total_rmse:.2f}")

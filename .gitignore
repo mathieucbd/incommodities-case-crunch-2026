@@ -28,3 +28,12 @@ notebooks/*_executed.ipynb
 
 # OS
 .DS_Store
+
+# Local archive (old experiments, never committed)
+archive/
+
+# Outputs (model artifacts, predictions, submissions) — keep only required files
+outputs/*
+!outputs/feature_selection_v5_fr.json
+!outputs/uk_feature_research.json
+!outputs/submission_attack_averaged.csv

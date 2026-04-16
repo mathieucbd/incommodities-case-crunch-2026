@@ -1,21 +1,17 @@
-"""Final pipeline v11 — v9 + Ridge + Stacking Résiduel T2 (per-country optimized).
+"""Final pipeline v17 — v16 + Fix 2 (Coherent STL retrain).
 
-v11 architecture:
-  Layer 1: v9 models (CB, LGB, XGB, EN, DNN) per market — unchanged from v9
-  Layer 1b: Ridge fondamentales (RidgeF) per market
-  Layer 2: T2 models (thematic groups × lightweight algos)
-    FR: 4 algos (sans cb_small) × 9 groupes (split fr_load) + 3 combos Ridge
-    UK: 4 algos (sans lgb_small) × 9 groupes (split uk_wind) + 3 combos Ridge
-  Stacking: Residual stacking — Ridge meta-learner predicts v9 ensemble errors
-    FR: standard Ridge, alpha=1
-    UK: enriched Ridge (+ hour_sin/cos, dow_sin/cos), alpha=500 (conservative)
-  Ensemble: regime-weighted (7 models: CB+LGB+XGB+EN+DNN+RidgeF+SR) + HBC
+v17 = v16 + coherent STL retrain (single STL fit on train+test for retrain).
 
-Validation scores (conservative anti-overfitting):
-  FR: ~14.86  UK: ~8.99  SUM: ~23.85
-  Gap vs leader (23.14): ~0.71
+v16: val 23.08, test 23.26 (gap +0.18)
+Fix 2 benchmark: -0.05 standalone CatBoost FR
 
-Usage: cd "INCOMO 3" && python -u scripts/final_pipeline_v11.py
+Change vs v16:
+  - Retrain section: single STL fit on concat(train, test) for ALL data
+  - Instead of mixing train-only STL + test-only STL
+
+Architecture: same as v16 (v13 + STL target FR)
+
+Usage: cd "INCOMO 3" && python -u scripts/final_pipeline_v17.py
 """
 
 import sys, json, time, warnings
@@ -40,6 +36,7 @@ from sklearn.linear_model import Ridge, ElasticNet
 from sklearn.model_selection import KFold
 from itertools import combinations
 import lightgbm as lgb
+from statsmodels.tsa.seasonal import STL
 
 warnings.filterwarnings("ignore")
 
@@ -50,11 +47,13 @@ with open("config.yaml") as f:
 # 0. LOAD DATA + FEATURES
 # ══════════════════════════════════════════════════════════════════════════
 print("=" * 90)
-print("  FINAL PIPELINE v11 — v9 + Ridge + SR T2 (per-country)")
+print("  FINAL PIPELINE v17 — v16 + Fix 2 (Coherent STL Retrain)")
 print("=" * 90)
 
 t0 = time.time()
 x_train, y_train, x_test = load_data("data/raw")
+
+# Build features separately (v13 style, no cold-start)
 train_fe = build_features(pd.concat([x_train], axis=0), config)
 train_fe = train_fe.join(y_train[["fr_spot", "uk_spot"]])
 test_fe = build_features(x_test, config)
@@ -80,6 +79,9 @@ print(f"  Train: {len(df_train)}, Val: {len(df_val)}, Test: {len(test_fe)}")
 # ── Feature lists ────────────────────────────────────────────────────────
 with open("outputs/feature_selection_v5_fr.json") as f:
     fs_v5 = json.load(f)
+
+# NO T1 features (overfit in v13+T1)
+# FR will get +1 feature: fr_stl_seasonal (added after STL decomposition)
 feat_fr = [f for f in fs_v5["features"] + ["X_fr_spot_la_roll_168h_mean_x_uk_price_per_mw_7d"]
            if f in df_train.columns]
 
@@ -104,10 +106,59 @@ for _i in range(len(_all_num)):
 feat_dnn = [f for f in _all_num if f not in _to_drop]
 feat_dnn_final = [f for f in feat_dnn if f in df_train.columns]
 
-print(f"  FR features: {len(feat_fr)}, UK features: {len(feat_uk)}, DNN features: {len(feat_dnn_final)}")
+print(f"  FR features: {len(feat_fr)} (28 base + 1 STL_seasonal), UK features: {len(feat_uk)}, DNN features: {len(feat_dnn_final)}")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# STL DECOMPOSITION (v16 breakthrough)
+# ══════════════════════════════════════════════════════════════════════════
+print()
+print("=" * 90)
+print("  STL DECOMPOSITION — FR Target Engineering")
+print("=" * 90)
+
+# Apply STL on fr_spot_la (period 168h = 1 week)
+spot_la_series = train_fe["fr_spot_la"].ffill().bfill()
+stl = STL(spot_la_series, period=168, seasonal=13)
+result = stl.fit()
+
+train_fe["fr_stl_trend"] = result.trend
+train_fe["fr_stl_seasonal"] = result.seasonal
+train_fe["fr_stl_residual"] = result.resid
+
+# Apply STL on test (needs concat for continuity at boundary)
+test_spot_la = test_fe["fr_spot_la"].ffill().bfill()
+full_spot_la = pd.concat([spot_la_series, test_spot_la])
+stl_full = STL(full_spot_la, period=168, seasonal=13)
+result_full = stl_full.fit()
+test_fe["fr_stl_trend"] = result_full.trend.iloc[len(train_fe):].values
+test_fe["fr_stl_seasonal"] = result_full.seasonal.iloc[len(train_fe):].values
+
+# Re-split after STL
+df_train = train_fe[~mask_val].copy()
+df_val = train_fe[mask_val].copy()
+df_train_uk = df_train.copy()
+
+print(f"  STL components created:")
+print(f"    Trend: mean={result.trend.mean():.2f}, std={result.trend.std():.2f}")
+print(f"    Seasonal: mean={result.seasonal.mean():.2f}, std={result.seasonal.std():.2f}")
+print(f"    Residual: mean={result.resid.mean():.2f}, std={result.resid.std():.2f}")
+
+# Add STL_seasonal as feature for FR models
+feat_fr.append("fr_stl_seasonal")
+feat_dnn_final.append("fr_stl_seasonal")
+print(f"  FR features updated: {len(feat_fr)} (+ fr_stl_seasonal)")
 
 # ── Targets ──────────────────────────────────────────────────────────────
-fr_stat = prepare_stationary("fr_spot_la", "fr_spot", train_fe, df_train, df_val)
+# v16: STL-based target (spot - STL_trend)
+fr_stat = {}
+fr_stat["rm_tr"] = df_train["fr_stl_trend"].values
+fr_stat["rm_va"] = df_val["fr_stl_trend"].values
+fr_stat["y_dev_tr"] = (df_train["fr_spot"] - df_train["fr_stl_trend"]).values
+fr_stat["y_dev_va"] = (df_val["fr_spot"] - df_val["fr_stl_trend"]).values
+fr_stat["valid_tr"] = np.isfinite(fr_stat["y_dev_tr"])
+fr_stat["valid_va"] = np.isfinite(fr_stat["y_dev_va"])
+print(f"  FR STL target: y = spot - STL_trend, mean={fr_stat['y_dev_tr'][fr_stat['valid_tr']].mean():.2f}, std={fr_stat['y_dev_tr'][fr_stat['valid_tr']].std():.2f}")
 spot_va_fr = df_val["fr_spot"].values
 hours_va = df_val["hour"].values
 dow_va = pd.to_datetime(df_val["datetime_CET"]).dt.dayofweek.values
@@ -172,6 +223,16 @@ XGB_UK_P = {
     "max_depth": 7, "reg_alpha": 2, "reg_lambda": 8,
     "subsample": 0.75, "colsample_bytree": 0.6, "min_child_weight": 20,
     "random_state": 42, "verbosity": 0, "tree_method": "hist",
+}
+
+# v13: XGB cluster params (more regularized for ~3480 samples per cluster)
+XGB_UK_CLUSTER_P = {**XGB_UK_P, "max_depth": 5, "min_child_weight": 50}
+
+CLUSTER_SPLIT_SHIFTED_6H = {
+    "early": [3, 4, 5, 6, 7, 8],
+    "mid":   [9, 10, 11, 12, 13, 14],
+    "late":  [15, 16, 17, 18, 19, 20],
+    "night": [21, 22, 23, 0, 1, 2],
 }
 
 t1 = time.time()
@@ -253,7 +314,31 @@ dnn_uk, dnn_uk_epochs = train_dnn(
     criterion=torch.nn.MSELoss())
 preds_uk_dnn = uk_moc_va + predict_dnn(dnn_uk, X_dnn_va_uk)
 
-print(f"  V9 models trained in {time.time()-t1:.0f}s")
+# v13: XGB cluster UK (4 models, shifted 6h)
+print(f"\n  Training XGB cluster UK (shifted 6h)...")
+hours_tr = df_train_uk["hour"].values
+hours_v = df_val["hour"].values
+xgb_cluster_models = {}
+preds_uk_xgb_cluster_basis = np.zeros(len(df_val))
+
+for cname, c_hours in CLUSTER_SPLIT_SHIFTED_6H.items():
+    c_mask_tr = np.isin(hours_tr, c_hours) & valid_basis_tr
+    c_mask_va = np.isin(hours_v, c_hours) & valid_basis_va
+    va_hour_mask = np.isin(hours_v, c_hours)
+
+    result = train_tree("xgboost", XGB_UK_CLUSTER_P,
+        df_train_uk.loc[df_train_uk.index[c_mask_tr], feat_uk].values,
+        y_basis_tr[c_mask_tr],
+        df_val.loc[df_val.index[c_mask_va], feat_uk].values,
+        y_basis_va[c_mask_va])
+    xgb_cluster_models[cname] = result
+    preds_uk_xgb_cluster_basis[va_hour_mask] = predict_tree(result.model,
+        df_val.loc[df_val.index[va_hour_mask], feat_uk].values)
+    print(f"    {cname:8s}: {c_mask_tr.sum()} train, {c_mask_va.sum()} val, iter={result.best_iteration}")
+
+preds_uk_xgb_cluster = uk_moc_va + preds_uk_xgb_cluster_basis
+
+print(f"\n  V9 + cluster models trained in {time.time()-t1:.0f}s")
 print(f"  DNN epochs: FR={dnn_fr_epochs}, UK={dnn_uk_epochs}")
 
 
@@ -595,15 +680,15 @@ v9r_uk = {"CB": preds_uk_cb[vb], "LGB": preds_uk_lgb[vb], "XGB": preds_uk_xgb[vb
            "EN": preds_uk_en[vb], "DNN": preds_uk_dnn[vb], "RidgeF": preds_uk_ridge[vb]}
 
 d_fr = {**v9r_fr, "SR": sr_fr_val}
-d_uk = {**v9r_uk, "SR": sr_uk_val}
+d_uk = {**v9r_uk, "SR": sr_uk_val, "XGB_C": preds_uk_xgb_cluster[vb]}
 
 print(f"\n  FR per-regime weights (7 models):")
-fr_regime_weights, preds_fr_ens = optimize_regime_weights(d_fr, spot_va_fr, hours_va, "FR_v11", step=0.1)
+fr_regime_weights, preds_fr_ens = optimize_regime_weights(d_fr, spot_va_fr, hours_va, "FR_v13", step=0.1)
 _, rmse_fr_hbc = compute_hbc(preds_fr_ens, spot_va_fr, hours_va)
 print(f"    +HBC={rmse_fr_hbc:.4f}")
 
-print(f"\n  UK per-regime weights (7 models):")
-uk_regime_weights, preds_uk_ens = optimize_regime_weights(d_uk, uk_spot_va[vb], hours_va[vb], "UK_v11", step=0.1)
+print(f"\n  UK per-regime weights (8 models — +XGB_cluster):")
+uk_regime_weights, preds_uk_ens = optimize_regime_weights(d_uk, uk_spot_va[vb], hours_va[vb], "UK_v13", step=0.1)
 _, rmse_uk_hbc = compute_hbc(preds_uk_ens, uk_spot_va[vb], hours_va[vb])
 print(f"    +HBC={rmse_uk_hbc:.4f}")
 
@@ -633,14 +718,24 @@ print("  6. Retrain on FULL data + generate test predictions")
 print("=" * 90)
 
 # ── FR retrain ──
+# v17 FIX 2: Coherent STL — single fit on concat(train, test) for retrain
+# Instead of mixing train-only STL (from validation phase) + test STL (from line 143)
+# This ensures the STL trend is consistent across train and test during retrain
 all_data = pd.concat([train_fe, test_fe], axis=0)
-fr_la_all = all_data["fr_spot_la"]
-rm_fr_all = fr_la_all.ewm(span=240).mean().values
+full_spot_la_retrain = pd.concat([
+    train_fe["fr_spot_la"].ffill().bfill(),
+    test_fe["fr_spot_la"].ffill().bfill()
+])
+stl_retrain = STL(full_spot_la_retrain, period=168, seasonal=13)
+result_retrain = stl_retrain.fit()
+rm_fr_all_coherent = result_retrain.trend.values  # Single coherent STL for everything
+
 n_full = len(train_fe)
-rm_fr_test = rm_fr_all[n_full:]
+rm_fr_test = rm_fr_all_coherent[n_full:]
 spot_fr_full = train_fe["fr_spot"].values
-y_dev_fr_full = spot_fr_full - rm_fr_all[:n_full]
+y_dev_fr_full = spot_fr_full - rm_fr_all_coherent[:n_full]  # Retrain targets with coherent STL
 valid_fr_full = np.isfinite(y_dev_fr_full)
+print(f"  v17 Fix 2: Coherent STL retrain (single fit on {len(full_spot_la_retrain)} samples)")
 
 hours_test = test_fe["hour"].values
 dow_test = pd.to_datetime(test_fe["datetime_CET"]).dt.dayofweek.values
@@ -763,6 +858,24 @@ xgb_uk_final = retrain_tree("xgboost", XGB_UK_P,
 preds_uk_test_xgb = uk_moc_test + predict_tree(xgb_uk_final, test_fe[feat_uk])
 print(f"  UK XGBoost: retrained ({xgb_uk.best_iteration} iter)")
 
+# v13: UK XGB cluster retrain (4 models, shifted 6h)
+hours_full = train_fe["hour"].values
+xgb_cluster_test_basis = np.zeros(len(test_fe))
+
+for cname, c_hours in CLUSTER_SPLIT_SHIFTED_6H.items():
+    c_mask_full = np.isin(hours_full, c_hours) & valid_uk_full
+    test_hour_mask = np.isin(hours_test, c_hours)
+    best_iter = xgb_cluster_models[cname].best_iteration
+
+    c_model = retrain_tree("xgboost", XGB_UK_CLUSTER_P,
+        train_fe.loc[train_fe.index[c_mask_full], feat_uk],
+        y_basis_full[c_mask_full], best_iter)
+    xgb_cluster_test_basis[test_hour_mask] = predict_tree(c_model,
+        test_fe.loc[test_fe.index[test_hour_mask], feat_uk])
+    print(f"  UK XGB cluster {cname:8s}: retrained ({best_iter} iter, {c_mask_full.sum()} samples)")
+
+preds_uk_test_xgb_cluster = uk_moc_test + xgb_cluster_test_basis
+
 # UK Elastic Net retrain
 en_uk_final, en_uk_scaler = retrain_elastic_net(
     train_fe.loc[train_fe.index[valid_uk_full], feat_uk].values,
@@ -825,10 +938,11 @@ X_sr_uk_test = np.hstack([X_sr_uk_test_t2, X_extra_test])
 sr_correction_uk = meta_uk.predict(X_sr_uk_test)
 preds_uk_test_sr = v9_ens_uk_test + sr_correction_uk
 
-# UK final ensemble
+# UK final ensemble (v13: 8 models — +XGB_cluster)
 uk_test_models = {"CB": preds_uk_test_cb, "LGB": preds_uk_test_lgb, "XGB": preds_uk_test_xgb,
                   "EN": preds_uk_test_en, "DNN": preds_uk_test_dnn,
-                  "RidgeF": preds_uk_test_ridge, "SR": preds_uk_test_sr}
+                  "RidgeF": preds_uk_test_ridge, "SR": preds_uk_test_sr,
+                  "XGB_C": preds_uk_test_xgb_cluster}
 preds_uk_test = apply_regime_weights(uk_test_models, hours_test, uk_regime_weights)
 preds_uk_test_hbc = preds_uk_test + np.array([hbc_uk_final.get(h, 0) for h in hours_test])
 print(f"  UK test: mean={preds_uk_test_hbc.mean():.1f}, std={preds_uk_test_hbc.std():.1f}")
@@ -854,16 +968,16 @@ sub = pd.DataFrame({
     "fr_spot": np.clip(preds_fr_test_hbc, fr_q_low, fr_q_high),
     "uk_spot": np.clip(preds_uk_test_hbc, uk_q_low, uk_q_high),
 })
-sub.to_csv("outputs/submission_v11.csv", index=False)
+sub.to_csv("outputs/submission_v17.csv", index=False)
 sub.to_csv("outputs/submission.csv", index=False)
-print(f"  submission_v11.csv — {len(sub)} rows")
+print(f"  submission_v17.csv — {len(sub)} rows")
 
 
 # ══════════════════════════════════════════════════════════════════════════
 # FINAL SUMMARY
 # ══════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 90)
-print("  FINAL SUMMARY — v11")
+print("  FINAL SUMMARY — v17 (v16 + Fix 2 Coherent STL)")
 print("=" * 90)
 
 print(f"\n  Validation (HBC):")
@@ -875,10 +989,11 @@ print(f"    Gap vs leader: {val_sum - 23.14:.2f}")
 print(f"\n  Architecture:")
 print(f"    v9 models: CB + LGB + XGB + EN + DNN (per market)")
 print(f"    + Ridge fondamentales")
+print(f"    + XGB cluster UK (4 models, shifted 6h)")
 print(f"    + Stacking Résiduel T2:")
 print(f"      FR: {len(t2_fr)} models ({len(FR_T2_ALGOS)} algos × {len(fr_groups)} groups), alpha=1")
-print(f"      UK: {len(t2_uk)} models ({len(UK_T2_ALGOS)} algos × {len(uk_groups)} groups + combos), enriched, alpha=100")
-print(f"    Ensemble: regime-weighted (7 models) + HBC")
+print(f"      UK: {len(t2_uk)} models ({len(UK_T2_ALGOS)} algos × {len(uk_groups)} groups + combos), enriched, alpha=500")
+print(f"    Ensemble: FR=7 models, UK=8 models (+XGB_cluster) + HBC")
 
 for rname in REGIMES:
     rw = fr_regime_weights.get(rname, {})
@@ -887,12 +1002,16 @@ for rname in REGIMES:
 
 for rname in REGIMES:
     rw = uk_regime_weights.get(rname, {})
-    rw_str = " / ".join(f"{nm}={rw.get(nm, 0):.1f}" for nm in ["CB","LGB","XGB","EN","DNN","RidgeF","SR"])
+    rw_str = " / ".join(f"{nm}={rw.get(nm, 0):.1f}" for nm in ["CB","LGB","XGB","EN","DNN","RidgeF","SR","XGB_C"])
     print(f"    UK {rname:8s}: {rw_str}")
 
 print(f"\n  Test predictions:")
 print(f"    FR: mean={preds_fr_test_hbc.mean():.1f}, std={preds_fr_test_hbc.std():.1f}")
 print(f"    UK: mean={preds_uk_test_hbc.mean():.1f}, std={preds_uk_test_hbc.std():.1f}")
 
-print(f"\n  Submission: outputs/submission_v11.csv")
+print(f"\n  Submission: outputs/submission_v17.csv (STL TARGET)")
 print(f"  Total time: {time.time() - t0:.0f}s")
+print(f"\n  v17 = v16 + Fix 2 (Coherent STL retrain)")
+print(f"  v16 test: 23.26, Fix 2 benchmark: -0.05 standalone")
+print(f"  Expected v17 test: ~23.23 (gap reduction from coherent STL)")
+print(f"  Output: outputs/submission_v17.csv")
