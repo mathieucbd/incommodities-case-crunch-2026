@@ -2,7 +2,7 @@
 
 **Competition**: Forecast hourly day-ahead electricity spot prices for France and UK over an 8-month out-of-sample period (Jul 2024 – Feb 2025)  
 **Metric**: RMSE averaged across FR and UK targets  
-**Result**: 2nd / 68 teams — score **20.0781** (benchmark: 21.43, 1st: 19.55)
+**Result**: 2nd / 7 teams — score **20.0781** (benchmark: 21.43, 1st: 19.55)
 
 ---
 

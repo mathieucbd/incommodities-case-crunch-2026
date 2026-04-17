@@ -231,7 +231,7 @@ Weights diverge radically by season (ACTION 3). DNN disappears in winter, SR ult
 
 | Submission | Private Score | Rank |
 |------------|---------------|------|
-| **attack_averaged** | **20.0781** | **2nd/68** |
+| **attack_averaged** | **20.0781** | **2nd/7** |
 | attack_winter | 20.2397 | — |
 | blend v17_85 + v9_15 | 20.4818 | former best public |
 

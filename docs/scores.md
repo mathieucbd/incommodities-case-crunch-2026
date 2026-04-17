@@ -77,7 +77,7 @@ Less pronounced than FR, but SR also rises (0.5-0.7 except late).
 
 | Submission | Private Score | Delta vs v17_blend | Rank |
 |------------|---------------|-------------------|------|
-| **submission_attack_averaged** | **20.0781** | **-2.74** | **2e/68** |
+| **submission_attack_averaged** | **20.0781** | **-2.74** | **2nd/7** |
 | submission_attack_winter | 20.2397 | -2.58 | — |
 | submission_attack_spring | not submitted (= v17) | baseline | — |
 | blend v17_85 + v9_15 | 20.4818 | ref | — |
