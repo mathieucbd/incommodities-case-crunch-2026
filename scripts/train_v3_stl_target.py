@@ -616,17 +616,17 @@ print(f"  T2: {len(t2_fr)} FR + {len(t2_uk)} UK ({time.time()-t2_start:.0f}s)")
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 4. STACKING RÉSIDUEL + ENSEMBLE OPTIMIZATION
+# 4. RESIDUAL STACKING + ENSEMBLE OPTIMIZATION
 # ══════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 90)
-print("  4. Stacking résiduel + regime ensemble optimization")
+print("  4. Residual Stacking + regime ensemble optimization")
 print("=" * 90)
 
 def make_vb(d):
     return {k: {"preds": v["preds"][vb], **{kk: vv for kk, vv in v.items() if kk != "preds"}}
             for k, v in d.items()}
 
-# FR: standard stacking residuel, alpha=1
+# FR: standard residual stacking, alpha=1
 n_fr = len(spot_va_fr)
 residuals_fr = spot_va_fr - v9_ens_fr[:n_fr]
 fr_t2_names = sorted(t2_fr.keys())
@@ -645,7 +645,7 @@ sr_fr_val = v9_ens_fr[:n_fr] + oof_fr
 meta_fr = Ridge(alpha=1.0)
 meta_fr.fit(X_sr_fr, residuals_fr)
 
-# UK: enriched stacking residuel, alpha=100
+# UK: enriched residual stacking, alpha=100
 t2_uk_vb = make_vb(t2_uk)
 n_uk = vb.sum()
 residuals_uk = uk_spot_va[vb] - v9_ens_uk[:n_uk]

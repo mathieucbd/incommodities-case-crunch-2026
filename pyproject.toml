@@ -1,5 +1,5 @@
 [project]
-name = "incomo3"
+name = "incommodities-case-crunch-2026"
 version = "0.1.0"
 description = "InCommodities Case Crunch 2026 - Electricity Price Forecasting (FR + UK)"
 requires-python = ">=3.10"
@@ -17,7 +17,6 @@ dependencies = [
     "jupyter>=1.0",
     "ipykernel>=6.25",
     "torch>=2.11.0",
-    "torch-geometric>=2.7.0",
     "statsmodels>=0.14.6",
     "xgboost>=3.2.0",
 ]

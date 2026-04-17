@@ -6,4 +6,3 @@ from .ensemble import REGIMES, HOUR_TO_REGIME, optimize_regime_weights, apply_re
 from .tree_models import train_tree, retrain_tree, predict_tree, TreeResult
 from .elastic_net import train_elastic_net, retrain_elastic_net, predict_elastic_net
 from .dnn import ElecDNN, DNN_DEVICE, train_dnn, predict_dnn
-from .gat import ElecGAT, train_gat, retrain_gat, predict_gat

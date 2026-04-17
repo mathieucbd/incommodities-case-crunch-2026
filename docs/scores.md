@@ -37,7 +37,7 @@ Validation: Feb 2024 — Jun 2024 (3623 hourly observations)
 | Holdout | Train Period | Val Period | Strategy |
 |---------|--------------|------------|----------|
 | **SPRING** | 2022-07-01 → 2024-01-31 | 2024-02-01 → 2024-06-30 | baseline (v17) |
-| **WINTER** | 2022-07-01 → 2024-01-31 | 2023-07-01 → 2023-11-30 | antisaisonnier |
+| **WINTER** | 2022-07-01 → 2024-01-31 | 2023-07-01 → 2023-11-30 | anti-seasonal |
 
 ### Validation Scores (+HBC)
 
@@ -45,7 +45,7 @@ Validation: Feb 2024 — Jun 2024 (3623 hourly observations)
 |------------|----|----|-----|-------|
 | **submission_attack_spring** | 14.35 | 8.83 | **23.18** | spring weights (v17 baseline) |
 | **submission_attack_winter** | 14.79 | 8.77 | **23.56** | winter weights (+0.38) |
-| **submission_attack_averaged** | 14.57 | 8.80 | **23.37** | moyenne arithmétique (+0.19) |
+| **submission_attack_averaged** | 14.57 | 8.80 | **23.37** | arithmetic mean (+0.19) |
 
 ### Critical Weight Divergence
 
@@ -71,7 +71,7 @@ Validation: Feb 2024 — Jun 2024 (3623 hourly observations)
 | Peak | 0.2 | **0.3** | 0.2 | **0.1** | 0.5 | **0.5** |
 | Late | 0.4 | **0.6** | 0.3 | **0.2** | 0.2 | **0.1** |
 
-Moins marqué qu'en FR, mais SR monte aussi (0.5-0.7 sauf late).
+Less pronounced than FR, but SR also rises (0.5-0.7 except late).
 
 ### Kaggle Results (Private Leaderboard)
 
@@ -100,7 +100,7 @@ These iterations + winter averaged weights = submission_attack_averaged (winner)
 ## Fulldata (2022→2025)
 
 **Date**: 2026-03-26
-**Fichiers reçus**: `x_train_full.csv`, `y_train_full.csv`
+**Files received**: `x_train_full.csv`, `y_train_full.csv`
 **Coverage**: 2022-01-01 → 2025-02-28 (23377 samples)
 
 ### New Holdouts
@@ -121,7 +121,7 @@ These iterations + winter averaged weights = submission_attack_averaged (winner)
 
 ### True RMSE (vs y_train_full actuals Jul 2024 → Feb 2025)
 
-Top 10 submissions testées sur les vrais actuals (ID 17544-23376):
+Top 10 submissions tested against true actuals (ID 17544-23376):
 
 | Submission | FR | UK | SUM |
 |------------|----|----|-----|
@@ -144,7 +144,7 @@ Top 10 submissions testées sur les vrais actuals (ID 17544-23376):
 
 ## Pipeline Evolution
 
-| Version | Changement | FR +HBC | UK +HBC | SUM | Delta |
+| Version | Change    | FR +HBC | UK +HBC | SUM | Delta |
 |---------|-----------|---------|---------|-----|-------|
 | v3a | CB + LGB + HBC | ~17.5 | ~9.8 | ~27.3 | baseline |
 | v4 | + EMA 240h FR anchor | 16.91 | 9.83 | 26.74 | -0.56 |
@@ -157,16 +157,16 @@ Top 10 submissions testées sur les vrais actuals (ID 17544-23376):
 | v9 | + loss diversity, no FR weights | 15.67 | 9.43 | 25.10 | -0.05 |
 | v13 | + XGB cluster UK (8th member shifted 6h) | 14.86 | 8.87 | 23.73 | -0.12 (vs v11b) |
 | **v16** | **+ STL 168h target FR (replaces EMA 240h)** | **14.25** | **8.83** | **23.08** | **-0.65** (vs v13) |
-| **v17** | **+ Fix 2 STL cohérent retrain** | **14.25** | **8.83** | **23.08** | **-0.04 test** (vs v16 blend) |
+| **v17** | **+ Fix 2 STL coherent retrain** | **14.25** | **8.83** | **23.08** | **-0.04 test** (vs v16 blend) |
 
 ---
 
 ## v16 — STL Target Engineering (seasonal decomposition)
 
-Architecture: v13 (7 FR models + 8 UK models) + STL 168h pour target FR
-- **Change FR**: target = spot - STL_trend (au lieu de spot - EMA 240h)
-- **Change UK**: AUCUN (garde target = spot - merit_order_cost)
-- STL = Seasonal-Trend decomposition using Loess, period=168h (1 semaine), seasonal=13
+Architecture: v13 (7 FR models + 8 UK models) + STL 168h for FR target
+- **Change FR**: target = spot - STL_trend (instead of spot - EMA 240h)
+- **Change UK**: NONE (keeps target = spot - merit_order_cost)
+- STL = Seasonal-Trend decomposition using Loess, period=168h (1 week), seasonal=13
 
 ### Standalone CatBoost Benchmarks (Quantile:0.6)
 
@@ -218,7 +218,7 @@ Architecture: v13 (7 FR models + 8 UK models) + STL 168h pour target FR
 - Basis modeling captures the true economic causality
 - STL = pure pattern, MOC = fundamental driver
 
-**Fichiers**:
+**Files**:
 - Benchmark FR: `outputs/benchmark_stl_target.json`
 - Benchmark UK: `outputs/benchmark_stl_uk.json`
 - Pipeline v16: `scripts/train_v3_stl_target.py`
@@ -228,10 +228,10 @@ Architecture: v13 (7 FR models + 8 UK models) + STL 168h pour target FR
 
 ## v11 — Residual Stacking T2 (decomposed hypotheses)
 
-Architecture: v9 (5 modeles) + Ridge(fondamentales) + Stacking Residuel T2
-- T2 = 55 modeles par marche (5 algos × 11 groupes thematiques)
+Architecture: v9 (5 models) + Ridge(fundamentals) + Residual Stacking T2
+- T2 = 55 models per market (5 algos × 11 thematic groups)
 - Algos T2: Ridge, ElasticNet, LGB small, CatBoost small, XGBoost small
-- Stacking: Ridge meta-learner (alpha=100, 5-fold CV) predit l'erreur du v9 ensemble
+- Stacking: Ridge meta-learner (alpha=100, 5-fold CV) predicts v9 ensemble error
 - Ensemble: regime-weighted (step=0.1) sur v9 models + RidgeF + SR
 
 ### Tested Hypotheses — Validation Scores HBC
@@ -239,76 +239,76 @@ Architecture: v9 (5 modeles) + Ridge(fondamentales) + Stacking Residuel T2
 | Hyp | Description | FR HBC | UK HBC | SUM | Delta vs v9 |
 |-----|-------------|--------|--------|-----|-------------|
 | H0 | v9 baseline (5 regime models + HBC) | 15.6696 | 9.4316 | 25.1012 | ref |
-| H1 | + Ridge(fondamentales) | 15.5340 | 9.3188 | 24.8528 | **-0.2484** |
-| H2 | + Stacking INDEPENDANT (T2 predit spot) | 15.2936 | 9.3055 | 24.5992 | **-0.5020** |
-| H3 | + Stacking RESIDUEL (T2 predit erreur v9) | 15.2076 | 9.2043 | 24.4120 | **-0.6892** |
-| H4 | + SR avec combos de groupes | 15.3137 | 9.1312 | 24.4450 | **-0.6562** |
+| H1 | + Ridge(fundamentals) | 15.5340 | 9.3188 | 24.8528 | **-0.2484** |
+| H2 | + Independent Stacking (T2 predicts spot) | 15.2936 | 9.3055 | 24.5992 | **-0.5020** |
+| H3 | + Residual Stacking (T2 predicts v9 error) | 15.2076 | 9.2043 | 24.4120 | **-0.6892** |
+| H4 | + SR with group combos | 15.3137 | 9.1312 | 24.4450 | **-0.6562** |
 | **BEST** | **FR=H3 + UK=H4** | **15.2076** | **9.1312** | **24.3389** | **-0.7623** |
 
 ### Cumulative Gain Decomposition
 
 ```
 v9 baseline         25.10  (reference)
-  + Ridge(fond)     24.85  (-0.25) → Ridge tres decorrelé (corr=0.65 FR, 0.41 UK)
-  + Stacking T2     24.60  (-0.25) → 55 T2 modeles stackes par Ridge meta-learner
-  + mode Residuel   24.41  (-0.19) → T2 predit erreur v9 au lieu du spot
-  + Best mix FR/UK  24.34  (-0.07) → UK meilleur avec combos de groupes
+  + Ridge(fond)     24.85  (-0.25) → Ridge highly decorrelated (corr=0.65 FR, 0.41 UK)
+  + Stacking T2     24.60  (-0.25) → 55 T2 models stacked by Ridge meta-learner
+  + Residual mode   24.41  (-0.19) -> T2 predicts v9 error instead of spot
+  + Best mix FR/UK  24.34  (-0.07) -> UK better with group combos
   ────────────────────────────
   TOTAL             -0.76
 ```
 
 ### H2 vs H3 — Independent vs Residual Stacking
 
-| Marche | SI (T2→spot) | SR (T2→erreur) | Delta |
+| Market | SI (T2→spot) | SR (T2→error) | Delta |
 |--------|-------------|----------------|-------|
 | FR HBC | 15.2936 | **15.2076** | **-0.0860** |
 | UK HBC | 9.3055 | **9.2043** | **-0.1012** |
 | SUM | 24.5992 | **24.4120** | **-0.1872** |
 
-Le stacking residuel est systematiquement meilleur.
+Residual stacking is systematically better.
 
 ### H4 — Group Combos
 
 | Config | FR SR_HBC | UK SR_HBC |
 |--------|-----------|-----------|
-| Sans combos (55m) | **16.55** | 9.84 |
-| Avec combos (65m) | 18.20 | **9.83** |
+| Without combos (55m) | **16.55** | 9.84 |
+| With combos (65m) | 18.20 | **9.83** |
 
-Combos degradent FR (+1.65) mais pas UK. Le standalone SR est pire avec combos,
-mais dans l'ensemble regime-weighted le SR_combo prend plus de poids pour UK.
+Combos degrade FR (+1.65) but not UK. Standalone SR is worse with combos,
+but within the regime-weighted ensemble SR_combo gets more weight for UK.
 
 ### H5 — Leave-one-algo-out (T2 algo importance in stacking)
 
 #### FR — Which T2 algo is most important?
 
-| Algo retire | SR HBC | Delta SR | Ensemble HBC | Delta ens |
+| Algo removed | SR HBC | Delta SR | Ensemble HBC | Delta ens |
 |-------------|--------|----------|-------------|-----------|
-| (aucun) | 16.5500 | ref | 15.2076 | ref |
+| (none)  | 16.5500 | ref | 15.2076 | ref |
 | ridge | 16.0461 | +0.8385 | 15.2480 | +0.0404 |
 | elasticnet | 16.1576 | +0.9500 | 15.3090 | +0.1014 |
 | **lgb_small** | **17.3886** | **+2.1810** | **15.3976** | **+0.1900** |
 | cb_small | 16.1877 | +0.9800 | **15.1333** | **-0.0743** |
 | xgb_small | 16.0829 | +0.8753 | 15.2147 | +0.0071 |
 
-**FR: LGB small est critique (+2.18 sur SR). Retirer CB small AMELIORE l'ensemble (-0.07).**
+**FR: LGB small is critical (+2.18 on SR). Removing CB small IMPROVES the ensemble (-0.07).**
 
 #### UK — Which T2 algo is most important?
 
-| Algo retire | SR HBC | Delta SR | Ensemble HBC | Delta ens |
+| Algo removed | SR HBC | Delta SR | Ensemble HBC | Delta ens |
 |-------------|--------|----------|-------------|-----------|
-| (aucun) | 9.8043 | ref | 9.2043 | ref |
+| (none)  | 9.8043 | ref | 9.2043 | ref |
 | ridge | 9.8506 | +0.6463 | 9.2309 | +0.0266 |
 | elasticnet | 10.0226 | +0.8183 | 9.2799 | +0.0756 |
 | lgb_small | 9.5493 | +0.3450 | **9.1252** | **-0.0791** |
 | cb_small | 9.8348 | +0.6304 | 9.2424 | +0.0381 |
 | xgb_small | 9.9256 | +0.7213 | 9.2344 | +0.0301 |
 
-**UK: ElasticNet et XGB les plus importants. Retirer LGB small AMELIORE l'ensemble (-0.08).**
+**UK: ElasticNet and XGB most important. Removing LGB small IMPROVES the ensemble (-0.08).**
 
 ### Regime Weights (v11 best = H3)
 
-#### FR (7 modeles: CB + LGB + XGB + EN + DNN + RidgeF + SR)
-| Regime | Heures | CB | LGB | XGB | EN | DNN | RidgeF | SR |
+#### FR (7 models: CB + LGB + XGB + EN + DNN + RidgeF + SR)
+| Regime | Hours  | CB | LGB | XGB | EN | DNN | RidgeF | SR |
 |--------|--------|-----|-----|-----|-----|-----|--------|-----|
 | Night | 0-5 | 0.2 | 0.1 | 0.1 | 0.0 | 0.2 | 0.1 | **0.3** |
 | Morning | 6-9 | 0.3 | 0.0 | 0.0 | 0.1 | 0.3 | 0.0 | **0.3** |
@@ -318,8 +318,8 @@ mais dans l'ensemble regime-weighted le SR_combo prend plus de poids pour UK.
 
 **SR receives 30-40% of weight in 4/5 regimes (except late). EN loses weight to SR.**
 
-#### UK (7 modeles: CB + LGB + XGB + EN + DNN + RidgeF + SR)
-| Regime | Heures | CB | LGB | XGB | EN | DNN | RidgeF | SR |
+#### UK (7 models: CB + LGB + XGB + EN + DNN + RidgeF + SR)
+| Regime | Hours  | CB | LGB | XGB | EN | DNN | RidgeF | SR |
 |--------|--------|-----|-----|-----|-----|-----|--------|-----|
 | Night | 0-5 | 0.1 | 0.0 | 0.2 | 0.0 | 0.2 | 0.2 | **0.3** |
 | Morning | 6-9 | 0.0 | 0.0 | 0.2 | 0.0 | 0.2 | 0.1 | **0.5** |
@@ -329,20 +329,20 @@ mais dans l'ensemble regime-weighted le SR_combo prend plus de poids pour UK.
 
 **SR receives 30-50% of weight in 4/5 regimes. Peak and Late remain tree-dominated.**
 
-### H6-H11 — Optimisations per-country
+### H6-H11 — Per-country optimizations
 
-Base de comparaison: BEST H0-H5 = 24.3389 (FR=H3, UK=H4)
+Comparison baseline: BEST H0-H5 = 24.3389 (FR=H3, UK=H4)
 
 | Hyp | Description | FR HBC | UK HBC | SUM | Delta vs H0-H5 |
 |-----|-------------|--------|--------|-----|-----------------|
 | H6 | Per-country algos (FR -cb, UK -lgb+combo) | 15.1333 | 9.0595 | 24.1928 | **-0.1461** |
 | H7 | Per-regime stacking (5 meta-learners) | 15.3176 | 9.1464 | 24.4640 | +0.1251 |
-| H8 | Meta-learner enrichi (+hour/dow sin/cos) | 15.1511 | 9.0566 | 24.2077 | **-0.1312** |
-| H9 | Alpha=1 les deux pays | 15.1307 | 9.0581 | 24.1888 | **-0.1501** |
-| H10 | Residus sur v9+Ridge | 15.1890 | 9.0686 | 24.2576 | -0.0813 |
+| H8 | Enriched meta-learner (+hour/dow sin/cos) | 15.1511 | 9.0566 | 24.2077 | **-0.1312** |
+| H9 | Alpha=1 both markets | 15.1307 | 9.0581 | 24.1888 | **-0.1501** |
+| H10 | Residuals on v9+Ridge | 15.1890 | 9.0686 | 24.2576 | -0.0813 |
 | **BEST** | **FR=H9 + UK=H8** | **15.1307** | **9.0566** | **24.1873** | **-0.1516** |
 
-#### Matrice FR x UK (toutes les combinaisons)
+#### FR x UK matrix (all combinations)
 
 ```
               UK=H6    UK=H7    UK=H8    UK=H9   UK=H10
@@ -379,49 +379,49 @@ T2 predictions.
 
 ### H11 — Leave-one-group-out (T2 group importance)
 
-#### FR (base=15.1307, 44 modeles, 4 algos sans cb_small, alpha=1)
+#### FR (base=15.1307, 44 models, 4 algos without cb_small, alpha=1)
 
-| Groupe retire | ens_HBC | Delta | Verdict |
+| Group removed | ens_HBC | Delta | Verdict |
 |---------------|---------|-------|---------|
-| fr_gas | 15.3417 | +0.2110 | **CRITIQUE** |
-| fr_uk_sig | 15.3338 | +0.2031 | **CRITIQUE** |
+| fr_gas | 15.3417 | +0.2110 | **CRITICAL** |
+| fr_uk_sig | 15.3338 | +0.2031 | **CRITICAL** |
 | fr_interco | 15.2352 | +0.1045 | Important |
 | fr_scarcity | 15.2232 | +0.0924 | Important |
 | fr_load | 15.2067 | +0.0760 | Important |
 | fr_calendar | 15.2061 | +0.0754 | Important |
 | fr_renewable | 15.1639 | +0.0332 | Utile |
 | fr_price | 15.1338 | +0.0031 | Marginal |
-| **fr_nuclear** | **15.1233** | **-0.0074** | Retire ameliore |
-| **fr_hydro** | **15.1121** | **-0.0186** | Retire ameliore |
-| **fr_continent** | **15.0644** | **-0.0663** | **Retire ameliore** |
+| **fr_nuclear** | **15.1233** | **-0.0074** | Removing improves |
+| **fr_hydro** | **15.1121** | **-0.0186** | Removing improves |
+| **fr_continent** | **15.0644** | **-0.0663** | **Removing improves** |
 
 **FR: removing fr_continent gives -0.066!** fr_hydro and fr_nuclear also slightly beneficial to remove.
 
-#### UK (base=9.0581, 54 modeles, 4 algos sans lgb_small + combos, alpha=1)
+#### UK (base=9.0581, 54 models, 4 algos without lgb_small + combos, alpha=1)
 
-| Groupe retire | ens_HBC | Delta | Verdict |
+| Group removed | ens_HBC | Delta | Verdict |
 |---------------|---------|-------|---------|
-| uk_interco | 9.1610 | +0.1029 | **CRITIQUE** |
+| uk_interco | 9.1610 | +0.1029 | **CRITICAL** |
 | uk_calendar | 9.0975 | +0.0394 | Important |
 | uk_continent | 9.0845 | +0.0264 | Important |
 | uk_price | 9.0616 | +0.0035 | Marginal |
 | uk_fr_price | 9.0604 | +0.0023 | Marginal |
 | uk_wind | 9.0601 | +0.0020 | Marginal |
-| **uk_nuclear_fr** | **9.0550** | **-0.0031** | Retire ameliore |
-| **uk_emissions** | **9.0488** | **-0.0093** | Retire ameliore |
-| **uk_load** | **9.0398** | **-0.0183** | Retire ameliore |
-| **uk_scarcity** | **9.0369** | **-0.0212** | Retire ameliore |
-| **uk_gas** | **9.0358** | **-0.0224** | **Retire ameliore** |
+| **uk_nuclear_fr** | **9.0550** | **-0.0031** | Removing improves |
+| **uk_emissions** | **9.0488** | **-0.0093** | Removing improves |
+| **uk_load** | **9.0398** | **-0.0183** | Removing improves |
+| **uk_scarcity** | **9.0369** | **-0.0212** | Removing improves |
+| **uk_gas** | **9.0358** | **-0.0224** | **Removing improves** |
 
 **UK: removing uk_gas, uk_scarcity, uk_load each gives ~-0.02.**
 
 ### H13 — Group Optimization (splits + combos)
 
-Base de comparaison: v11 H12 best = 24.17 (FR=15.04, UK=9.13)
+Comparison baseline: v11 H12 best = 24.17 (FR=15.04, UK=9.13)
 
 | Test | Description | FR HBC | UK HBC | SUM | Delta |
 |------|-------------|--------|--------|-----|-------|
-| A1 | FR + all 28 combos | 15.17 | — | — | +0.13 (trop de combos = bruit) |
+| A1 | FR + all 28 combos | 15.17 | — | — | +0.13 (too many combos = noise) |
 | A5 | FR + 7 combos greedy | **14.81** | — | — | **-0.23** |
 | B_fr | Split fr_load → raw + residual | 15.00 | — | — | -0.04 |
 | C1 | UK + all 28 combos | — | 9.23 | — | +0.10 |
@@ -429,7 +429,7 @@ Base de comparaison: v11 H12 best = 24.17 (FR=15.04, UK=9.13)
 | B_uk | Split uk_wind → core + continent | — | 9.03 | — | -0.10 |
 | **D** | **FR split+combos + UK split+combos** | **14.80** | **8.97** | **23.77** | **-0.40** |
 
-#### FR combos greedy (7 paires Ridge ajoutées)
+#### FR combos greedy (7 Ridge pairs added)
 1. fr_price + fr_calendar (-0.106)
 2. fr_renewable + fr_load (-0.147)
 3. fr_load + fr_price (-0.149)
@@ -440,7 +440,7 @@ Base de comparaison: v11 H12 best = 24.17 (FR=15.04, UK=9.13)
 
 FR combos now work (H4 = +1.65 on 11 groups, H13 = -0.23 on 8 surviving groups).
 
-#### UK combos greedy (5 paires Ridge au lieu des 6 de v11)
+#### UK combos greedy (5 Ridge pairs instead of v11's 6)
 1. uk_price + uk_fr_price (-0.042)
 2. uk_wind + uk_nuclear_fr (-0.131)
 3. uk_nuclear_fr + uk_calendar (-0.161)
@@ -453,10 +453,10 @@ FR combos now work (H4 = +1.65 on 11 groups, H13 = -0.23 on 8 surviving groups).
 v9 baseline                  25.10  (reference)
   + Ridge(fond)              24.85  (-0.25)
   + Stacking T2 (SI)         24.60  (-0.25)
-  + mode Residuel (SR)       24.41  (-0.19)
-  + Best mix FR/UK           24.34  (-0.07) UK avec combos
-  + Per-country algos        24.19  (-0.15) FR -cb, UK -lgb, alpha=1, meta enrichi UK
-  + Group splits + combos    23.83  (-0.36) splits + FR combos + UK combos élargis
+  + Residual mode (SR)       24.41  (-0.19)
+  + Best mix FR/UK           24.34  (-0.07) UK with combos
+  + Per-country algos        24.19  (-0.15) FR -cb, UK -lgb, alpha=1, enriched meta UK
+  + Group splits + combos    23.83  (-0.36) splits + FR combos + extended UK combos
   ────────────────────────────────
   TOTAL                      -1.27  (vs v9)
   Gap vs leader              0.69   (vs 23.14)
@@ -468,22 +468,22 @@ v9 baseline                  25.10  (reference)
 
 | Submission | Score | Val Score | Gap | Notes |
 |-----------|-------|-----------|-----|-------|
-| **blend v17_85 + v9_15** | **23.20** | — | — | **MEILLEUR** — v17 Fix2 + blend anti-overfitting |
-| blend v16_85 + v9_15 | 23.24 | — | — | blend classique, Fix 2 apporte -0.04 |
-| v16 (STL target FR) | 23.26 | 23.08 | +0.18 | gap = biais in-sample STL |
-| blend v13_85 + v9_15 | 23.78 | — | — | ancien meilleur — anti-overfitting par blending |
+| **blend v17_85 + v9_15** | **23.20** | — | — | **BEST** — v17 Fix2 + blend anti-overfitting |
+| blend v16_85 + v9_15 | 23.24 | — | — | classic blend, Fix 2 adds -0.04 |
+| v16 (STL target FR) | 23.26 | 23.08 | +0.18 | gap = STL in-sample bias |
+| blend v13_85 + v9_15 | 23.78 | — | — | former best — anti-overfitting via blending |
 | v11b_conservative | 23.92 | 23.85 | +0.07 | anti-overfitting (UK alpha=500, 3+3 combos) |
 | v13 | 23.94 | 23.73 | +0.21 | XGB_cluster UK overfit |
 | v13+T1 | 23.94 | 23.71 | +0.23 | T1 features overfit (val -0.02, test +0.02) |
 | v11 (splits+combos) | 24.23 | 23.83 | +0.40 | overfitting combos greedy |
 | v14 (cold-start fix) | 24.27 | 23.69 | +0.58 | **CATASTROPHE** — data leakage |
-| v5b (regime) | 24.88 | 26.39 | -1.51 | ancien meilleur, underfit |
-| v3a (std HBC) | 25.28 | ~27.3 | ~-2.0 | 1er soumis, underfit |
+| v5b (regime) | 24.88 | 26.39 | -1.51 | former best, underfit |
+| v3a (std HBC) | 25.28 | ~27.3 | ~-2.0 | first submitted, underfit |
 | v7 (5-model) | not submitted | 25.12 | — | — |
 | v8 | not submitted | 25.15 | — | — |
 | v15 (damped Ridge) | not submitted | 23.74 | — | inefficace (SR reste dominant) |
-| blend v5b+v7 | not submitted | — | — | diversite ok (std=8.93 FR, 2.97 UK) |
-| **1er place** | **23.14** | — | — | Team KISS |
+| blend v5b+v7 | not submitted | — | — | diversity ok (std=8.93 FR, 2.97 UK) |
+| **1st place** | **23.14** | — | — | Team KISS |
 
 ---
 
@@ -491,20 +491,20 @@ v9 baseline                  25.10  (reference)
 
 ### France
 
-| Modele | RMSE | +HBC | Notes |
+| Model  | RMSE | +HBC | Notes |
 |--------|------|------|-------|
 | CatBoost (Optuna v2) | 17.21 | 17.02 | depth=3, lr=0.059, 28 feat |
 | LightGBM | 17.73 | 17.58 | 15 leaves, reg_alpha=5 |
 | XGBoost | 28.38 | 24.88 | depth=4, lr=0.05 (instable) |
 | Elastic Net | 18.09 | 16.56 | alpha=10, l1=0.9, 14 nonzero |
 | DNN [192,96] | 17.23 | 16.69 | Huber delta=5, dropout=0.2 |
-| GRU seq12_h128 | 18.22 | 17.80 | pire que trees |
-| GAT-GRU s24_gat64 | 18.65 | 18.16 | pire que GRU |
+| GRU seq12_h128 | 18.22 | 17.80 | worse than trees |
+| GAT-GRU s24_gat64 | 18.65 | 18.16 | worse than GRU |
 | **Regime Ensemble (5)** | **15.81** | **15.70** | v8 weights |
 
 ### United Kingdom
 
-| Modele | RMSE | +HBC | Notes |
+| Model  | RMSE | +HBC | Notes |
 |--------|------|------|-------|
 | CatBoost (12m, MAE) | 10.12 | 9.94 | depth=8, basis target, 154 feat |
 | CatBoost (full) | 10.03 | 9.87 | v7 full window |
@@ -512,8 +512,8 @@ v9 baseline                  25.10  (reference)
 | XGBoost | 10.38 | 10.11 | depth=7 |
 | Elastic Net | 11.72 | 11.32 | alpha=1, 32 nonzero |
 | DNN [768,384,192] | 11.30 | 11.03 | Huber, dropout=0.3 |
-| GRU seq24_h256 | 11.34 | 11.12 | pire que trees |
-| GAT-GRU s24_gat64 | 10.99 | 10.65 | pire que trees |
+| GRU seq24_h256 | 11.34 | 11.12 | worse than trees |
+| GAT-GRU s24_gat64 | 10.99 | 10.65 | worse than trees |
 | **Regime Ensemble (5)** | **9.55** | **9.45** | v8 weights |
 
 ---
@@ -521,7 +521,7 @@ v9 baseline                  25.10  (reference)
 ## Regime Weights (v8)
 
 ### FR
-| Regime | Heures | CB | LGB | XGB | EN | DNN |
+| Regime | Hours  | CB | LGB | XGB | EN | DNN |
 |--------|--------|-----|-----|-----|-----|-----|
 | Night | 0-5 | 0.0 | 0.6 | 0.0 | 0.1 | 0.3 |
 | Morning | 6-9 | 0.0 | 0.0 | 0.0 | 0.3 | 0.7 |
@@ -530,7 +530,7 @@ v9 baseline                  25.10  (reference)
 | Late | 22-23 | 0.5 | 0.1 | 0.0 | 0.0 | 0.4 |
 
 ### UK
-| Regime | Heures | CB | LGB | XGB | EN | DNN |
+| Regime | Hours  | CB | LGB | XGB | EN | DNN |
 |--------|--------|-----|-----|-----|-----|-----|
 | Night | 0-5 | 0.5 | 0.0 | 0.0 | 0.4 | 0.1 |
 | Morning | 6-9 | 0.6 | 0.0 | 0.0 | 0.1 | 0.3 |
@@ -557,21 +557,21 @@ v9 baseline                  25.10  (reference)
 |--------|---------|---------|---------|
 | EMA 240h (FR) | **16.85** | — | best FR |
 | Rolling mean 240h (FR) | 17.22 | — | -0.37 vs EMA |
-| Rolling mean 168h (FR) | 17.34 | — | baseline ancien |
+| Rolling mean 168h (FR) | 17.34 | — | old baseline |
 | Basis merit_order_cost (UK) | — | **9.97** | best UK |
 | EMA 240h (UK) | — | 10.65 | -0.68 vs basis |
 
 ### Loss Functions — Diversity Optimization (v9)
 
-Chaque modele utilise une loss differente pour maximiser la decorrelation des erreurs dans l'ensemble.
+Each model uses a different loss to maximize error decorrelation in the ensemble.
 
-| Modele | FR loss | FR +HBC | UK loss | UK +HBC |
+| Model  | FR loss | FR +HBC | UK loss | UK +HBC |
 |--------|---------|---------|---------|---------|
 | CatBoost | Quantile:0.6 | 16.46 | Quantile:0.6 | 9.78 |
 | LightGBM | MAE | 16.76 | Huber(delta=5) | 9.90 |
 | XGBoost | PseudoHuber(20) | 18.67 | PseudoHuber(20) | 10.11 |
 | DNN | Huber(delta=5) | 16.69 | MSE | 10.96 |
-| Elastic Net | MSE (fixe) | 16.44 | MSE (fixe) | 13.10 |
+| Elastic Net | MSE (fixed) | 16.44 | MSE (fixed) | 13.10 |
 | **Ensemble** | | **15.65** | | **9.37** |
 
 Key finding: FR sample weights (time_decay/variance, max/min ratio = 23,895x) were killing non-MSE losses. Removing them unlocked the gains.

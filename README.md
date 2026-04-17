@@ -105,9 +105,8 @@ python scripts/infer_live_finals.py
 │   ├── 02_eda_deep_dives.ipynb        — deep-dive analyses (spark spread, regimes, spikes)
 │   ├── 03_feature_selection.ipynb     — feature selection (generates required JSONs)
 │   ├── 04_catboost_results.ipynb      — CatBoost feature sweep + Optuna results
-│   ├── 05_fr_error_diagnostic.ipynb   — FR error analysis
-│   ├── 06_basis_modeling.ipynb        — UK basis target modeling
-│   └── 07_results_recap.ipynb         — final results recap
+│   ├── 05_basis_modeling.ipynb        — UK basis target modeling
+│   └── 06_results_recap.ipynb         — final results recap
 ├── docs/
 │   ├── scores.md                      — full submission history
 │   ├── findings.md                    — key findings

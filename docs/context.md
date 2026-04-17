@@ -128,9 +128,8 @@ incommodities-case-crunch-2026/
 │   ├── 02_eda_deep_dives.ipynb        # Deep-dive analyses
 │   ├── 03_feature_selection.ipynb     # SHAP/Boruta feature selection
 │   ├── 04_catboost_results.ipynb      # CatBoost experiments
-│   ├── 05_fr_error_diagnostic.ipynb   # FR error diagnostics
-│   ├── 06_basis_modeling.ipynb        # UK basis modeling (spot - MOC)
-│   └── 07_results_recap.ipynb         # Results summary
+│   ├── 05_basis_modeling.ipynb        # UK basis modeling (spot - MOC)
+│   └── 06_results_recap.ipynb         # Results summary
 ├── scripts/
 │   ├── train_v1_baseline.py           # v9 baseline (~800 lines)
 │   ├── train_v2_stacking_residual.py          # + Stacking Residual

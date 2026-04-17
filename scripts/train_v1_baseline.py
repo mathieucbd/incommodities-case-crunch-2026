@@ -160,7 +160,7 @@ FR_PARAMS = {
     "use_best_model": True,
 }
 
-# T1: +6 features existantes (oversupply, solar, thermal) — gain -0.29 +HBC ensemble validé
+# T1: +6 existing features (oversupply, solar, thermal) — gain -0.29 +HBC validated on ensemble
 T1_FEATURES_FR = [
     "fr_oversupply_mw", "fr_negative_price_risk",
     "fr_thermal_need_pos", "fr_baseload_surplus",
