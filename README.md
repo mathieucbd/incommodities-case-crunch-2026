@@ -69,12 +69,14 @@ python scripts/infer_live_finals.py
 
 ## Pipeline Evolution
 
-| Script | Description | Val RMSE |
-|--------|-------------|----------|
-| `train_v1_baseline.py` | Baseline: 5 models, regime weights, HBC | ~26.1 |
-| `train_v2_stacking_residual.py` | + Residual Stacking | ~25.3 |
-| `train_v3_stl_target.py` | + STL target FR + coherent Fix2 | ~23.9 |
-| `train_v4_dual_holdout.py` | + Double seasonal calibration | **~23.4** |
+| Script | Hackathon ID | Description | Val RMSE |
+|--------|--------------|-------------|----------|
+| `train_v1_baseline.py` | v9 | Baseline: 5 models, regime weights, HBC | ~26.1 |
+| `train_v2_stacking_residual.py` | v11 | + Residual Stacking | ~25.3 |
+| `train_v3_stl_target.py` | v17 | + STL target FR + coherent Fix2 | ~23.9 |
+| `train_v4_dual_holdout.py` | attack_averaged | + Double seasonal calibration | **~23.4** |
+
+> **Note on versioning**: during the hackathon, dozens of architectures were tried (v1 → v17, plus blends and ablations). Only the 4 milestone scripts above were kept for this public release. Historical docs ([docs/scores.md](docs/scores.md), [docs/findings.md](docs/findings.md)) still reference the original hackathon IDs (v9, v11, v13, v16, v17, …) to preserve the progression story with its specific RMSE deltas.
 
 ---
 

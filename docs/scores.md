@@ -4,6 +4,8 @@ Competition: InCommodities Case Crunch 2026
 Metric: RMSE (FR) + RMSE (UK) = SUM
 Validation: Feb 2024 — Jun 2024 (3623 hourly observations)
 
+> **Note on versioning**: version IDs below (v9, v11, v13, v16, v17, …) are the original hackathon iteration tags and preserve the full submission history. The public repo keeps only 4 milestone scripts (`train_v1_baseline.py` → `train_v4_dual_holdout.py`). Mapping: v1=v9, v2=v11, v3=v17, v4=attack_averaged. See [README.md](../README.md#pipeline-evolution).
+
 ---
 
 ## Best Scores
