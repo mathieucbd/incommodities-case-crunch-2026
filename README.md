@@ -1,4 +1,4 @@
-# InCommodities Case Crunch 2026 — 2nd Place Solution
+# InCommodities Case Crunch 2026 — Kaggle 2nd Place
 
 **Competition**: Forecast hourly day-ahead electricity spot prices for France and UK over an 8-month out-of-sample period (Jul 2024 – Feb 2025)  
 **Metric**: RMSE averaged across FR and UK targets  
